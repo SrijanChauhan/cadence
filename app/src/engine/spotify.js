@@ -1,0 +1,187 @@
+/**
+ * Cadence — Spotify playlist adapter (Path 2: create a real saved playlist)
+ *
+ * Auth: Authorization Code with PKCE (no client secret — safe for mobile).
+ * Flow:
+ *   1. connectSpotify() opens Spotify's login in an in-app browser.
+ *   2. User approves → Spotify redirects to cadence://spotify-auth?code=...
+ *   3. App catches the deep link (wired in App.js), calls exchangeCode(code).
+ *   4. createPlaylistFromTracks() searches each track by title+artist,
+ *      creates a playlist in the user's library, and adds the matches.
+ *
+ * Requires Spotify Premium on the connected account (Feb 2026 policy).
+ * Endpoints use the current (Feb 2026) Web API shapes:
+ *   POST /me/playlists , POST /playlists/{id}/tracks (add items).
+ */
+
+import * as WebBrowser from "expo-web-browser";
+import * as Crypto from "expo-crypto";
+
+const CLIENT_ID = "5cb328659de34b61bf3a437fd42e20c0";
+const REDIRECT_URI = "cadence://spotify-auth";
+const SCOPES = "playlist-modify-private playlist-modify-public";
+
+let accessToken = null;
+let refreshToken = null;
+let tokenExpiry = 0;
+let pkceVerifier = null;
+let cachedUserId = null;
+
+export function hasSpotifyAuth() {
+  return !!accessToken && Date.now() < tokenExpiry;
+}
+
+// ---- PKCE helpers ----
+function randomString(len = 64) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  let out = "";
+  const bytes = Crypto.getRandomBytes(len);
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+async function sha256Base64Url(input) {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    input,
+    { encoding: Crypto.CryptoEncoding.BASE64 }
+  );
+  // base64 -> base64url
+  return digest.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/** Step 1+3: open Spotify login, capture the returned code, exchange for tokens.
+ *  Returns true on success. The code arrives in the browser result URL — we do
+ *  NOT rely on a deep-link listener (it doesn't fire for openAuthSessionAsync). */
+export async function connectSpotify() {
+  pkceVerifier = randomString(64);
+  const challenge = await sha256Base64Url(pkceVerifier);
+  const url =
+    "https://accounts.spotify.com/authorize" +
+    `?client_id=${CLIENT_ID}` +
+    "&response_type=code" +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&scope=${encodeURIComponent(SCOPES)}` +
+    "&code_challenge_method=S256" +
+    `&code_challenge=${challenge}`;
+  const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI);
+  if (result.type !== "success" || !result.url) return false;
+  const match = result.url.match(/[?&]code=([^&]+)/);
+  if (!match) return false;
+  await exchangeCode(decodeURIComponent(match[1]));
+  return true;
+}
+
+/** Step 3: exchange the returned code for tokens. Called from the deep-link handler. */
+export async function exchangeCode(code) {
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: pkceVerifier,
+  }).toString();
+
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(`Token exchange failed: ${json.error_description || json.error}`);
+  accessToken = json.access_token;
+  refreshToken = json.refresh_token;
+  tokenExpiry = Date.now() + (json.expires_in - 60) * 1000;
+}
+
+async function refreshIfNeeded() {
+  if (Date.now() < tokenExpiry) return;
+  if (!refreshToken) throw new Error("Session expired — reconnect Spotify.");
+  const body = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  }).toString();
+  const res = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error("Couldn't refresh Spotify session.");
+  accessToken = json.access_token;
+  tokenExpiry = Date.now() + (json.expires_in - 60) * 1000;
+  if (json.refresh_token) refreshToken = json.refresh_token;
+}
+
+async function api(path, opts = {}) {
+  await refreshIfNeeded();
+  const res = await fetch(`https://api.spotify.com/v1${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 204) return null;
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Spotify ${res.status}: ${json.error?.message || "error"}`);
+  return json;
+}
+
+async function getUserId() {
+  if (cachedUserId) return cachedUserId;
+  const me = await api("/me");
+  cachedUserId = me.id;
+  return cachedUserId;
+}
+
+/** Search Spotify for one track by title + artist; return its URI or null. */
+async function findTrackUri(track) {
+  const q = encodeURIComponent(`track:${track.title} artist:${track.artist}`);
+  try {
+    const json = await api(`/search?q=${q}&type=track&limit=1`);
+    const hit = json.tracks?.items?.[0];
+    if (hit) return hit.uri;
+    // looser retry without field filters
+    const q2 = encodeURIComponent(`${track.title} ${track.artist}`);
+    const json2 = await api(`/search?q=${q2}&type=track&limit=1`);
+    return json2.tracks?.items?.[0]?.uri || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a playlist in the user's Spotify library from Cadence tracks.
+ * Returns { url, matchedCount, totalCount }.
+ */
+export async function createPlaylistFromTracks(tracks, { name = "Cadence Session", description = "" } = {}) {
+  if (!hasSpotifyAuth()) throw new Error("Not connected to Spotify — connect first.");
+  // match tracks -> spotify URIs
+  const uris = [];
+  for (const t of tracks) {
+    const uri = await findTrackUri(t);
+    if (uri) uris.push(uri);
+  }
+  if (uris.length === 0) throw new Error("None of your tracks were found on Spotify.");
+
+  // create the (private) playlist
+  const playlist = await api(`/me/playlists`, {
+    method: "POST",
+    body: JSON.stringify({ name, description, public: false }),
+  });
+
+  // add items (max 100 per request; we're well under)
+  await api(`/playlists/${playlist.id}/tracks`, {
+    method: "POST",
+    body: JSON.stringify({ uris }),
+  });
+
+  return {
+    url: playlist.external_urls?.spotify || null,
+    matchedCount: uris.length,
+    totalCount: tracks.length,
+  };
+}

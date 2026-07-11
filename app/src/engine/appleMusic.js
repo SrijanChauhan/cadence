@@ -1,28 +1,14 @@
 /**
- * Cadence — Apple Music deep-link adapter (no MusicKit, no dev account)
- *
- * Uses Apple's free iTunes Lookup API to resolve an ISRC into an
- * Apple Music URL, then opens it — the Apple Music app takes over and
- * plays the FULL song under the user's own subscription.
- *
- * Limits (until the MusicKit phase):
- *  - one-way handoff: we can't control playback or read what happened
- *  - can't write playlists into the user's library (needs Music User Token)
- *
- * Lookup: https://itunes.apple.com/lookup?isrc=<ISRC>&entity=song&country=<CC>
- * Results are cached in-memory: ISRC→URL mappings are stable per session.
+ * Cadence — Apple Music deep-link adapter
+ * If the track already carries a direct Apple Music URL (iTunes provider),
+ * open it straight away. Otherwise resolve via free iTunes ISRC lookup
+ * (Deezer provider path). No MusicKit / dev account needed for handoff.
  */
 
 import { Linking } from "react-native";
 
 const cache = new Map(); // isrc -> url | null
 
-/**
- * Resolve an ISRC to an Apple Music track URL.
- * @param {string} isrc
- * @param {string} country storefront country code (default IN)
- * @returns {Promise<string|null>}
- */
 export async function appleMusicUrlForIsrc(isrc, country = "IN") {
   if (!isrc) return null;
   const key = `${country}:${isrc}`;
@@ -37,16 +23,12 @@ export async function appleMusicUrlForIsrc(isrc, country = "IN") {
     cache.set(key, url);
     return url;
   } catch {
-    return null; // network hiccup — treat as no match, don't cache
+    return null;
   }
 }
 
-/**
- * Open a track in the Apple Music app. Returns true if a match was
- * found and the redirect fired, false if no Apple Music match exists.
- */
 export async function openInAppleMusic(track, country = "IN") {
-  const url = await appleMusicUrlForIsrc(track.isrc, country);
+  const url = track.appleUrl || (await appleMusicUrlForIsrc(track.isrc, country));
   if (!url) return false;
   await Linking.openURL(url);
   return true;

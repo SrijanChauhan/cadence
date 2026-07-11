@@ -5,8 +5,7 @@ import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
 
 export default function App() {
-  const [traits, setTraits] = useState(null); // OCEAN vector from onboarding
-
+  const [traits, setTraits] = useState(null);
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
@@ -15,7 +14,7 @@ export default function App() {
           <View style={styles.top}>
             <Text style={styles.wordmark}>CADENCE</Text>
             <Pressable onPress={() => setTraits(null)}>
-              <Text style={styles.retake}>Recalibrate</Text>
+              <Text style={styles.retake}>recalibrate</Text>
             </Pressable>
           </View>
           <PlaylistScreen traits={traits} />
@@ -28,8 +27,8 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0d0d16" },
-  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", paddingHorizontal: 22, paddingTop: 12, paddingBottom: 10 },
-  wordmark: { color: "#ECECF2", fontWeight: "800", letterSpacing: 3, fontSize: 13 },
-  retake: { color: "#8A8A9A", fontSize: 12 },
+  safe: { flex: 1, backgroundColor: "#000" },
+  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", paddingHorizontal: 24, paddingTop: 14, paddingBottom: 12 },
+  wordmark: { color: "#FFF", fontWeight: "900", letterSpacing: 5, fontSize: 14 },
+  retake: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
 });
