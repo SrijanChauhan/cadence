@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput,
+  View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput, Keyboard,
 } from "react-native";
 import { Audio } from "expo-av";
 import * as Location from "expo-location";
@@ -242,18 +242,12 @@ export default function PlaylistScreen({ traits }) {
   const [saveState, setSaveState] = useState("idle");
   const [saveMsg, setSaveMsg] = useState("");
 
-  // "Cadence" stays capitalized (brand prefix); Activity/Mood segments are camelCase
-  const toCamel = (s) => {
-    const words = (s || "").split(/\s+/).filter(Boolean);
-    if (words.length === 0) return "session";
-    return words
-      .map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)))
-      .join("");
-  };
+  // Each word capitalized, spaces stripped: "Deep Work" -> "DeepWork"
+  const capitalizeWords = (s) => (s || "").split(/\s+/).filter(Boolean).join("");
 
   const playlistName = () => {
-    const actLabel = toCamel(ACTIVITIES.find((a) => a.key === activity)?.label) || "session";
-    const moodLabel = toCamel(mood?.label) || "mixed";
+    const actLabel = capitalizeWords(ACTIVITIES.find((a) => a.key === activity)?.label) || "Session";
+    const moodLabel = capitalizeWords(mood?.label) || "Mixed";
     return `Cadence.${actLabel}.${moodLabel}`;
   };
 
@@ -357,9 +351,6 @@ export default function PlaylistScreen({ traits }) {
             <Pressable style={s.iconBtn} onPress={() => play(t)}>
               <Text style={[s.icon, playingId === t.id && s.iconVolt]}>{playingId === t.id ? "\u275a\u275a" : "\u25b6"}</Text>
             </Pressable>
-            <Pressable style={s.iconBtn} onPress={() => openApple(t)}>
-              <Text style={[s.icon, fb === "save" && s.iconVolt]}>{"\uf8ff"}</Text>
-            </Pressable>
             <Pressable style={s.iconBtn} onPress={() => like(t)}>
               <Text style={[s.icon, fb === "like" && s.iconVolt]}>{"\u2665"}</Text>
             </Pressable>
@@ -426,7 +417,7 @@ export default function PlaylistScreen({ traits }) {
     )}
 
     {moodPromptOpen && (
-      <View style={s.moodOverlay}>
+      <Pressable style={s.moodOverlay} onPress={Keyboard.dismiss}>
         <View style={s.moodCard}>
           <Text style={s.moodKicker}>ONE-TIME {'\u00b7'} THIS SESSION</Text>
           <Text style={s.moodQ}>How are you feeling right now?</Text>
@@ -448,11 +439,14 @@ export default function PlaylistScreen({ traits }) {
             value={extraFeeling}
             onChangeText={setExtraFeeling}
             multiline
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
           />
           <Pressable style={s.moodGo} onPress={confirmMood}><Text style={s.moodGoText}>BUILD MY PLAYLIST</Text></Pressable>
           <Pressable onPress={skipMood}><Text style={s.moodSkip}>skip {"\u2014"} just use activity</Text></Pressable>
         </View>
-      </View>
+      </Pressable>
     )}
     </View>
   );
