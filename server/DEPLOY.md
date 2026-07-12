@@ -7,8 +7,11 @@
    - **Build command:** `npm install`
    - **Start command:** `npm start`
    - **Instance type:** Free
-4. Add an environment variable:
+4. Add environment variables:
    - `GETSONGBPM_KEY` = your key (the one you registered — moved off the phone for real this time)
+   - `LASTFM_API_KEY` = your key from last.fm/api/account/create (free, personal use) —
+     powers real similar-artist blending. Optional: without it, that step
+     just skips (no crash), same as GetSongBPM without a key.
 5. Deploy. Render gives you a URL like `https://cadence-xyz.onrender.com`.
 6. Put that URL in the app: `src/config.js` → `BACKEND_URL`.
 

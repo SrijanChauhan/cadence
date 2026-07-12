@@ -2,11 +2,13 @@
  * Cadence backend
  * Runs the recommendation pipeline server-side: seed rules + mood
  * (multi-select bubbles + free text) + weather -> cross-genre music
- * discovery (searches every genre in the seed pool, not one random pick;
- * Deezer -> iTunes fallback) -> BPM enrichment -> merge + drop repeat
- * artists + sort by BPM proximity. Keeps the GetSongBPM key off the phone
- * (was bundled client-side — a real leak risk on a public repo) and gives
- * one place to evolve the engine without an app store update.
+ * discovery (searches every genre in the seed pool, plus your real Spotify
+ * top artists and their real similar artists from Last.fm, not one random
+ * genre pick; Deezer -> iTunes fallback) -> BPM enrichment -> merge + drop
+ * stock/library-music junk + repeat artists + sort by BPM proximity. Keeps
+ * the GetSongBPM/Last.fm keys off the phone (GetSongBPM was bundled
+ * client-side at first — a real leak risk on a public repo) and gives one
+ * place to evolve the engine without an app store update.
  *
  * traits is personality-optional: the client can send neutral {O:C:E:A:N:0.5}
  * to skip onboarding — seedTarget's formulas produce zero personality shift
@@ -21,6 +23,7 @@ import { seedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
 import { searchAcrossGenres } from "./engine/musicProvider.js";
 import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
+import { getSimilarArtists } from "./engine/lastfm.js";
 
 const app = express();
 app.use(cors());
@@ -34,7 +37,8 @@ app.get("/activities", (_req, res) => res.json(ACTIVITIES));
  * POST /recommend
  * body: { traits, activity, moodLabels?: string[], moodText?: string,
  *         lat?: number, lon?: number, spotifyArtists?: string[],
- *         spotifyGenres?: string[], limit?: number }
+ *         spotifyGenres?: string[] (accepted, currently unused — see below),
+ *         limit?: number }
  * returns: { target, tracks, reserve, mood, weather, place, diag }
  */
 app.post("/recommend", async (req, res) => {
@@ -42,7 +46,7 @@ app.post("/recommend", async (req, res) => {
   try {
     const {
       traits, activity, moodLabels = [], moodText = "", lat, lon,
-      spotifyArtists = [], spotifyGenres = [], limit = 15,
+      spotifyArtists = [], limit = 15,
     } = req.body;
     if (!traits || !activity) return res.status(400).json({ error: "traits and activity are required" });
 
@@ -69,17 +73,23 @@ app.post("/recommend", async (req, res) => {
     const combinedShift = moodShift + weatherShift;
     const target = seedTarget(traits, activity, combinedShift);
 
-    // Blend in artists (and their genres, as a free substitute for the
-    // "adjacent artist" API Spotify closed in Nov 2024) you actually listen
-    // to on Spotify, alongside the personality-filtered genre pool — capped
-    // so a cross-genre search across up to ~8 terms stays reasonably fast.
-    const seedPool = [
-      ...target.seedPool,
-      ...spotifyArtists.slice(0, 4),
-      ...spotifyGenres.slice(0, 3),
-    ];
-    if (spotifyArtists.length || spotifyGenres.length) {
-      diag.push(`blended in ${Math.min(spotifyArtists.length, 4)} of your top artists + ${Math.min(spotifyGenres.length, 3)} of their genres`);
+    // Blend in artists you actually listen to on Spotify, PLUS real similar
+    // artists for them from Last.fm (genuine "adjacent artist" data — see
+    // lastfm.js for why Spotify/iTunes can't supply this for free anymore).
+    // Capped: each extra term is a full search+enrich round trip, and too
+    // many dilutes results-per-term in searchAcrossGenres.
+    const topArtists = spotifyArtists.slice(0, 3);
+    const similarLists = await Promise.all(topArtists.map((a) => getSimilarArtists(a, 2)));
+    const similarArtists = [...new Set(similarLists.flat())].slice(0, 3);
+
+    const seedPool = [...target.seedPool, ...topArtists, ...similarArtists];
+    if (topArtists.length) {
+      diag.push(`blended in ${topArtists.length} of your top artists`);
+    }
+    if (similarArtists.length) {
+      diag.push(`+ ${similarArtists.length} real similar artists (Last.fm): ${similarArtists.join(", ")}`);
+    } else if (topArtists.length) {
+      diag.push("no Last.fm similar-artist data (LASTFM_API_KEY not set, or no matches)");
     }
 
     // fetch a larger pool than we show, so removed tracks can be replaced
