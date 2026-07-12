@@ -6,6 +6,7 @@ import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BACKEND_URL } from "./config";
+import SessionBanner from "./SessionBanner";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
@@ -359,6 +360,15 @@ export default function PlaylistScreen({ traits }) {
           </Pressable>
         ))}
       </View>
+
+      {target && (
+        <SessionBanner
+          mood={mood}
+          weather={weather}
+          activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
+          place={place}
+        />
+      )}
 
       {target && (
         <View style={s.targetRow}>

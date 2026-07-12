@@ -2,14 +2,17 @@ import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, StyleSheet, View, Text, Pressable, ActivityIndicator } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import FrontPage from "./src/FrontPage";
 import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
 
 const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
+const FRONT_PAGE_MIN_MS = 1800; // brand moment on every launch, not just first run
 
 export default function App() {
   const [traits, setTraits] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
 
   // on launch, restore a saved personality profile if one exists
   useEffect(() => {
@@ -17,6 +20,13 @@ export default function App() {
       .then((raw) => { if (raw) setTraits(JSON.parse(raw)); })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // keep the front page up for a minimum stretch even if the profile
+  // restore resolves instantly, so it reads as a title card, not a flicker
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeElapsed(true), FRONT_PAGE_MIN_MS);
+    return () => clearTimeout(t);
   }, []);
 
   const saveProfile = async (vector) => {
@@ -34,11 +44,11 @@ export default function App() {
     try { await AsyncStorage.removeItem(PROFILE_KEY); } catch {}
   };
 
-  if (loading) {
+  if (loading || !minTimeElapsed) {
     return (
-      <SafeAreaView style={[styles.safe, { justifyContent: "center", alignItems: "center" }]}>
+      <SafeAreaView style={styles.safe}>
         <StatusBar style="light" />
-        <ActivityIndicator color="#D6FF3D" />
+        <FrontPage />
       </SafeAreaView>
     );
   }
