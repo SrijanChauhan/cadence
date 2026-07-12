@@ -19,10 +19,14 @@
 
 import * as WebBrowser from "expo-web-browser";
 import * as Crypto from "expo-crypto";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const CLIENT_ID = "5cb328659de34b61bf3a437fd42e20c0";
 const REDIRECT_URI = "cadence://spotify-auth";
-const SCOPES = "playlist-modify-private playlist-modify-public";
+// user-top-read powers the "blend in artists you actually listen to" search —
+// see getTopArtists(). Everything else is playlist-write, unchanged.
+const SCOPES = "playlist-modify-private playlist-modify-public user-top-read";
+const TOKEN_KEY = "cadence:spotify:refreshToken";
 
 let accessToken = null;
 let refreshToken = null;
@@ -32,6 +36,24 @@ let cachedUserId = null;
 
 export function hasSpotifyAuth() {
   return !!accessToken && Date.now() < tokenExpiry;
+}
+
+/**
+ * Try to silently resume a previous Spotify session using a persisted
+ * refresh token, so the user isn't asked to reconnect every app launch.
+ * Returns true if it worked. Safe to call even with no saved token.
+ */
+export async function restoreSpotifySession() {
+  try {
+    const saved = await AsyncStorage.getItem(TOKEN_KEY);
+    if (!saved) return false;
+    refreshToken = saved;
+    tokenExpiry = 0; // force refreshIfNeeded() to actually refresh
+    await refreshIfNeeded();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---- PKCE helpers ----
@@ -95,6 +117,7 @@ export async function exchangeCode(code) {
   accessToken = json.access_token;
   refreshToken = json.refresh_token;
   tokenExpiry = Date.now() + (json.expires_in - 60) * 1000;
+  if (refreshToken) AsyncStorage.setItem(TOKEN_KEY, refreshToken).catch(() => {});
 }
 
 async function refreshIfNeeded() {
@@ -114,7 +137,10 @@ async function refreshIfNeeded() {
   if (!res.ok) throw new Error("Couldn't refresh Spotify session.");
   accessToken = json.access_token;
   tokenExpiry = Date.now() + (json.expires_in - 60) * 1000;
-  if (json.refresh_token) refreshToken = json.refresh_token;
+  if (json.refresh_token) {
+    refreshToken = json.refresh_token;
+    AsyncStorage.setItem(TOKEN_KEY, refreshToken).catch(() => {});
+  }
 }
 
 async function api(path, opts = {}) {
@@ -138,6 +164,28 @@ async function getUserId() {
   const me = await api("/me");
   cachedUserId = me.id;
   return cachedUserId;
+}
+
+/**
+ * Your actual top artists (medium_term = ~last 6 months), for blending real
+ * listening history into search instead of generic genre terms. Spotify
+ * closed Related Artists/Recommendations in Nov 2024 (see music-data-layer.md)
+ * so there's no free "similar artist" API left — genres on each top artist
+ * are the closest free substitute for "adjacent" discovery.
+ * Returns { names: string[], genres: string[] }, both deduped, or empty
+ * arrays (never throws) if not connected or the call fails.
+ */
+export async function getTopArtists(limit = 8) {
+  if (!hasSpotifyAuth()) return { names: [], genres: [] };
+  try {
+    const json = await api(`/me/top/artists?limit=${limit}&time_range=medium_term`);
+    const items = json.items || [];
+    const names = [...new Set(items.map((a) => a.name).filter(Boolean))];
+    const genres = [...new Set(items.flatMap((a) => a.genres || []))];
+    return { names, genres };
+  } catch {
+    return { names: [], genres: [] };
+  }
 }
 
 /** Search Spotify for one track by title + artist; return its URI or null. */

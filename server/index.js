@@ -20,7 +20,7 @@ import cors from "cors";
 import { seedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
 import { searchAcrossGenres } from "./engine/musicProvider.js";
-import { fetchWeather, weatherToBpmShift } from "./engine/weather.js";
+import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
 
 const app = express();
 app.use(cors());
@@ -33,19 +33,23 @@ app.get("/activities", (_req, res) => res.json(ACTIVITIES));
 /**
  * POST /recommend
  * body: { traits, activity, moodLabels?: string[], moodText?: string,
- *         lat?: number, lon?: number, limit?: number }
- * returns: { target, tracks, reserve, mood, weather, diag }
+ *         lat?: number, lon?: number, spotifyArtists?: string[],
+ *         spotifyGenres?: string[], limit?: number }
+ * returns: { target, tracks, reserve, mood, weather, place, diag }
  */
 app.post("/recommend", async (req, res) => {
   const diag = [];
   try {
-    const { traits, activity, moodLabels = [], moodText = "", lat, lon, limit = 15 } = req.body;
+    const {
+      traits, activity, moodLabels = [], moodText = "", lat, lon,
+      spotifyArtists = [], spotifyGenres = [], limit = 15,
+    } = req.body;
     if (!traits || !activity) return res.status(400).json({ error: "traits and activity are required" });
 
     const mood = analyzeCombined(moodLabels, moodText);
     diag.push(`mood: ${mood.label} (v=${mood.valence.toFixed(2)}, a=${mood.arousal.toFixed(2)})`);
 
-    let weather = null, weatherShift = 0;
+    let weather = null, weatherShift = 0, place = null;
     if (lat != null && lon != null) {
       try {
         weather = await fetchWeather(lat, lon);
@@ -54,18 +58,36 @@ app.post("/recommend", async (req, res) => {
       } catch (e) {
         diag.push(`weather lookup failed: ${e.message}`);
       }
+      try {
+        place = await fetchPlaceName(lat, lon);
+      } catch (e) {
+        diag.push(`place lookup failed: ${e.message}`);
+      }
     }
 
     const moodShift = Math.round(mood.arousal * 15);
     const combinedShift = moodShift + weatherShift;
     const target = seedTarget(traits, activity, combinedShift);
 
+    // Blend in artists (and their genres, as a free substitute for the
+    // "adjacent artist" API Spotify closed in Nov 2024) you actually listen
+    // to on Spotify, alongside the personality-filtered genre pool — capped
+    // so a cross-genre search across up to ~8 terms stays reasonably fast.
+    const seedPool = [
+      ...target.seedPool,
+      ...spotifyArtists.slice(0, 4),
+      ...spotifyGenres.slice(0, 3),
+    ];
+    if (spotifyArtists.length || spotifyGenres.length) {
+      diag.push(`blended in ${Math.min(spotifyArtists.length, 4)} of your top artists + ${Math.min(spotifyGenres.length, 3)} of their genres`);
+    }
+
     // fetch a larger pool than we show, so removed tracks can be replaced
     // from the "reserve" without a second network round trip. Searches every
-    // genre in the (personality-filtered) seed pool, not just one random
+    // term in seedPool (genres + your artists/genres), not just one random
     // pick — merges results, drops repeat artists, sorts by BPM proximity.
     const pool = await searchAcrossGenres({
-      seedPool: target.seedPool,
+      seedPool,
       bpmMin: target.bpmMin,
       bpmMax: target.bpmMax,
       limit: limit + 15,
@@ -75,7 +97,7 @@ app.post("/recommend", async (req, res) => {
     const tracks = pool.slice(0, limit);
     const reserve = pool.slice(limit);
 
-    res.json({ target, tracks, reserve, mood, weather, diag });
+    res.json({ target, tracks, reserve, mood, weather, place, diag });
   } catch (e) {
     diag.push(`fatal: ${e.message}`);
     res.status(500).json({ error: e.message, diag });

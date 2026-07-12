@@ -41,3 +41,20 @@ export function weatherToBpmShift({ tempC, condition, localHour }) {
   if (localHour != null && (localHour >= 22 || localHour < 6)) shift -= 5; // late night, calmer
   return Math.max(-10, Math.min(10, Math.round(shift)));
 }
+
+/**
+ * Reverse-geocode lat/lon into a human place name, for the playlist
+ * description ("story"). BigDataCloud's client-side endpoint: free, no
+ * API key, no signup — meant for exactly this kind of lightweight lookup.
+ */
+export async function fetchPlaceName(lat, lon) {
+  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Reverse geocode HTTP ${res.status}`);
+  const json = await res.json();
+  const city = json.city || json.locality || null;
+  const region = json.principalSubdivision || null;
+  const country = json.countryName || null;
+  const parts = [city, !city ? region : null, country].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}

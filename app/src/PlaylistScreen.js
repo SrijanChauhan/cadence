@@ -7,7 +7,7 @@ import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BACKEND_URL } from "./config";
 import { openInAppleMusic } from "./engine/appleMusic";
-import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks } from "./engine/spotify";
+import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
 
 /**
@@ -47,6 +47,8 @@ export default function PlaylistScreen({ traits }) {
   const [tracks, setTracks] = useState([]);
   const [reserve, setReserve] = useState([]);
   const [target, setTarget] = useState(null);
+  const [weather, setWeather] = useState(null);
+  const [place, setPlace] = useState(null);
   const [playingId, setPlayingId] = useState(null);
   const [feedback, setFeedback] = useState({});
   const [queue, setQueue] = useState([]);
@@ -68,6 +70,7 @@ export default function PlaylistScreen({ traits }) {
 
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
+    restoreSpotifySession(); // silently reconnect if we have a saved refresh token
     return () => { sound.current?.unloadAsync(); };
   }, []);
 
@@ -128,11 +131,16 @@ export default function PlaylistScreen({ traits }) {
     const pushDiag = (m) => setDiag((d) => [...d, m]);
     try {
       const loc = await getLocation();
+      // Blend in artists (and their genres) you actually listen to on Spotify,
+      // when connected — see getTopArtists() for why genres substitute for
+      // "adjacent artists" (Spotify closed that API in Nov 2024).
+      const { names: spotifyArtists, genres: spotifyGenres } = await getTopArtists();
       const body = {
         traits, activity: act,
         moodLabels: moodInput ? moodInput.labels : (mood?.selected || []),
         moodText: moodInput ? moodInput.text : "",
         lat: loc?.lat, lon: loc?.lon,
+        spotifyArtists, spotifyGenres,
         limit: 15,
       };
       const res = await fetch(`${BACKEND_URL}/recommend`, {
@@ -166,6 +174,8 @@ export default function PlaylistScreen({ traits }) {
 
       setTarget(json.target);
       setReserve(json.reserve || []);
+      setWeather(json.weather || null);
+      setPlace(json.place || null);
       setTracks(rankTracks(merged, buckets.current[act]));
     } catch (e) {
       setError(e.message || "Couldn't reach the Cadence backend.");
@@ -251,6 +261,35 @@ export default function PlaylistScreen({ traits }) {
     return `Cadence.${actLabel}.${moodLabel}`;
   };
 
+  // Turns the session's inputs (when, where, weather, mood, activity, tempo)
+  // into a short narrated description instead of a bare label list, so
+  // opening the playlist in Spotify tells you why it's built the way it is.
+  const playlistStory = () => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label || "your session";
+
+    let story = `Built ${dateStr} at ${timeStr}`;
+    if (place) story += ` in ${place}`;
+    story += ".";
+
+    if (weather?.tempC != null) {
+      const condWord = { rain: "rainy", snow: "snowy", cloudy: "cloudy", clear: "clear" }[weather.condition] || weather.condition;
+      story += ` ${Math.round(weather.tempC)}°C and ${condWord} outside.`;
+    }
+
+    const moodWords = mood?.selected?.length
+      ? mood.selected.join(", ").toLowerCase()
+      : (mood?.words?.length ? mood.words.join(", ") : null);
+    if (moodWords) story += ` You were feeling ${moodWords}.`;
+    else if (mood?.label && mood.label !== "Neutral") story += ` Mood: ${mood.label.toLowerCase()}.`;
+
+    if (target) story += ` Tuned for ${actLabel} at ${target.bpmMin}–${target.bpmMax} BPM.`;
+
+    return `Made by Cadence. ${story}`;
+  };
+
   const saveToSpotify = async () => {
     try {
       if (!hasSpotifyAuth()) {
@@ -262,7 +301,7 @@ export default function PlaylistScreen({ traits }) {
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
       const { matchedCount, totalCount } = await createPlaylistFromTracks(list, {
         name: playlistName(),
-        description: `Made by Cadence — personality + mood tuned (${mood?.label || "no mood set"}).`,
+        description: playlistStory(),
       });
       setSaveState("done");
       setSaveMsg(`Saved ${matchedCount}/${totalCount} tracks to Spotify. Open Spotify → Library.`);
