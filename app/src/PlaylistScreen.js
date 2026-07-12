@@ -68,11 +68,31 @@ export default function PlaylistScreen({ traits }) {
   const [extraFeeling, setExtraFeeling] = useState("");
   const moodAskedThisSession = useRef(false);
 
+  // Connecting Spotify EARLY (before the first recommend call) is what makes
+  // getTopArtists() actually have something to blend in. Previously Spotify
+  // only got connected from the Save button, which fires *after* tracks
+  // already loaded — so the artist/similar-artist blend silently never ran
+  // on a typical session. spotifyConnected mirrors hasSpotifyAuth() so the
+  // banner below can reflect it without re-checking on every render.
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [connectingSpotify, setConnectingSpotify] = useState(false);
+
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
-    restoreSpotifySession(); // silently reconnect if we have a saved refresh token
+    restoreSpotifySession().then(() => setSpotifyConnected(hasSpotifyAuth())); // silently reconnect if we have a saved refresh token
     return () => { sound.current?.unloadAsync(); };
   }, []);
+
+  const connectSpotifyNow = async () => {
+    setConnectingSpotify(true);
+    try {
+      const ok = await connectSpotify();
+      setSpotifyConnected(ok && hasSpotifyAuth());
+      if (ok && activity) load(activity); // refresh with the newly available artist blend
+    } finally {
+      setConnectingSpotify(false);
+    }
+  };
 
   useEffect(() => {
     if (!activity) return;
@@ -295,6 +315,7 @@ export default function PlaylistScreen({ traits }) {
       if (!hasSpotifyAuth()) {
         setSaveState("connecting"); setSaveMsg("Opening Spotify sign-in…");
         const ok = await connectSpotify();
+        setSpotifyConnected(ok && hasSpotifyAuth());
         if (!ok) { setSaveState("error"); setSaveMsg("Spotify sign-in was cancelled."); return; }
       }
       setSaveState("saving"); setSaveMsg("Building your Spotify playlist…");
@@ -323,6 +344,13 @@ export default function PlaylistScreen({ traits }) {
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
     <ScrollView style={s.root} contentContainerStyle={{ paddingBottom: nowPlaying ? 96 : 44 }}>
+      {!spotifyConnected && (
+        <Pressable style={s.spotifyBanner} onPress={connectSpotifyNow} disabled={connectingSpotify}>
+          <Text style={s.spotifyBannerText}>
+            {connectingSpotify ? "Connecting…" : "Connect Spotify to personalize picks with artists you actually listen to"}
+          </Text>
+        </Pressable>
+      )}
       <Text style={s.kicker}>PICK A MODE</Text>
       <View style={s.chips}>
         {ACTIVITIES.map((a) => (
@@ -493,6 +521,8 @@ export default function PlaylistScreen({ traits }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000", paddingHorizontal: 22, paddingTop: 4 },
+  spotifyBanner: { backgroundColor: "#0A0A0A", borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
+  spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 12 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 18 },
   chip: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 10, paddingHorizontal: 18, backgroundColor: "#0A0A0A" },

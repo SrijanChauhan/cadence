@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Claude Code local session state
+.claude/
+
 # Node / Expo
 node_modules/
 app/node_modules/
