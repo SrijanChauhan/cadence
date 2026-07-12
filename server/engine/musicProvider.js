@@ -14,8 +14,19 @@
 import { searchTracks as deezerSearch } from "./deezer.js";
 import { itunesSearchTracks } from "./itunes.js";
 import { enrichBpm } from "./getSongBpm.js";
+import { filterToAppleMusicAvailable } from "./appleMusicResolve.js";
 
-let provider = null; // 'deezer' | 'itunes' — sticky per session
+// 'deezer' | 'itunes' — sticky WITHIN one /recommend call (avoids re-probing
+// Deezer on every genre term in the same request), but must be reset at the
+// start of each request via resetProvider() — this used to be a true module-
+// level global with no reset, meaning the first successful probe from ANY
+// user locked the provider for every other user for the server's entire
+// uptime. See server/index.js's /recommend handler for the reset call.
+let provider = null;
+
+export function resetProvider() {
+  provider = null;
+}
 
 export async function searchTracks(opts) {
   const { onDiag = () => {} } = opts;
@@ -122,11 +133,17 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
   }
   onDiag(`merged ${merged.length} → ${deduped.length} after dropping repeat artists`);
 
+  // every track shown to the client must actually redirect to something
+  // real on tap — iTunes tracks are verified by construction, Deezer tracks
+  // get resolved (ISRC, then validated text search) and dropped if neither
+  // finds a real match
+  const verified = await filterToAppleMusicAvailable(deduped, "IN", onDiag);
+
   const mid = (bpmMin + bpmMax) / 2;
   const distance = (t) => (t.bpm == null ? Infinity : Math.abs(t.bpm - mid));
-  deduped.sort((a, b) => distance(a) - distance(b));
+  verified.sort((a, b) => distance(a) - distance(b));
 
-  return deduped.slice(0, limit);
+  return verified.slice(0, limit);
 }
 
 /**
