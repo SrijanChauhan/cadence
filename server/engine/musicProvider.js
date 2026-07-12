@@ -46,6 +46,46 @@ export function currentProvider() {
 }
 
 /**
+ * Cross-genre search: queries every term in seedPool (instead of one random
+ * pick), merges the results, drops repeat artists (first occurrence wins —
+ * results are already roughly rank/BPM-ordered per source), then sorts the
+ * merged pool by closeness to the target BPM band so genre variety doesn't
+ * come at the cost of tempo match. First term runs alone so the sticky
+ * Deezer/iTunes provider decision locks before the rest fire in parallel.
+ */
+export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20, onDiag = () => {} }) {
+  const terms = seedPool && seedPool.length ? seedPool : [undefined];
+  const perTerm = Math.max(6, Math.ceil((limit * 1.5) / terms.length));
+
+  const [first, ...rest] = terms;
+  const results = [await searchTracks({ seedTerms: first, bpmMin, bpmMax, limit: perTerm, onDiag })];
+  if (rest.length) {
+    const more = await Promise.all(
+      rest.map((seedTerms) => searchTracks({ seedTerms, bpmMin, bpmMax, limit: perTerm, onDiag }).catch(() => []))
+    );
+    results.push(...more);
+  }
+  onDiag(`explored ${terms.length} genre${terms.length === 1 ? "" : "s"}: ${terms.join(", ")}`);
+
+  const merged = results.flat();
+  const seenArtists = new Set();
+  const deduped = [];
+  for (const t of merged) {
+    const key = (t.artist || "").trim().toLowerCase();
+    if (key && seenArtists.has(key)) continue;
+    if (key) seenArtists.add(key);
+    deduped.push(t);
+  }
+  onDiag(`merged ${merged.length} → ${deduped.length} after dropping repeat artists`);
+
+  const mid = (bpmMin + bpmMax) / 2;
+  const distance = (t) => (t.bpm == null ? Infinity : Math.abs(t.bpm - mid));
+  deduped.sort((a, b) => distance(a) - distance(b));
+
+  return deduped.slice(0, limit);
+}
+
+/**
  * iTunes tracks lack BPM; fill it so the seed band + Bayesian learning work.
  * ISRC is NOT enriched here — Apple's public iTunes Lookup API (verified
  * against a live response) doesn't expose an isrc field at all, so a lookup

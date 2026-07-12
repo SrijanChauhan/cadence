@@ -24,6 +24,11 @@ export default function App() {
     try { await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(vector)); } catch {}
   };
 
+  // Neutral (0.5) traits produce zero personality-driven shift in seedTarget's
+  // formulas (e.g. (E-0.5)*20 == 0) — so skipping onboarding reuses the same
+  // pipeline, just with mood/weather/time as the only signals that move it.
+  const skipPersonality = () => saveProfile({ O: 0.5, C: 0.5, E: 0.5, A: 0.5, N: 0.5 });
+
   const recalibrate = async () => {
     setTraits(null);
     try { await AsyncStorage.removeItem(PROFILE_KEY); } catch {}
@@ -52,7 +57,7 @@ export default function App() {
           <PlaylistScreen traits={traits} />
         </View>
       ) : (
-        <OnboardingScreen onComplete={saveProfile} />
+        <OnboardingScreen onComplete={saveProfile} onSkip={skipPersonality} />
       )}
     </SafeAreaView>
   );

@@ -73,7 +73,7 @@ function BounceNumber({ value, style }) {
   );
 }
 
-export default function OnboardingScreen({ onComplete }) {
+export default function OnboardingScreen({ onComplete, onSkip }) {
   const [screen, setScreen] = useState("intro");
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState(Array(ITEMS.length).fill(null));
@@ -103,7 +103,7 @@ export default function OnboardingScreen({ onComplete }) {
 
   return (
     <View style={s.root}>
-      {screen === "intro" && <Intro onStart={() => setScreen("quiz")} />}
+      {screen === "intro" && <Intro onStart={() => setScreen("quiz")} onSkip={onSkip} />}
       {screen === "quiz" && (
         <Quiz idx={idx} answers={answers} onAnswer={answer} onBack={() => idx > 0 && setIdx(idx - 1)} />
       )}
@@ -112,7 +112,7 @@ export default function OnboardingScreen({ onComplete }) {
   );
 }
 
-function Intro({ onStart }) {
+function Intro({ onStart, onSkip }) {
   return (
     <View style={s.center}>
       <Text style={s.kicker}>CADENCE</Text>
@@ -125,6 +125,11 @@ function Intro({ onStart }) {
         <Text style={s.voltBtnText}>START</Text>
       </Pressable>
       <Text style={s.fineprint}>Mini-IPIP · validated Big Five short form</Text>
+      {onSkip && (
+        <Pressable style={s.skipBtn} onPress={onSkip}>
+          <Text style={s.skipBtnText}>skip {"—"} use mood, weather & time only</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -227,6 +232,8 @@ const s = StyleSheet.create({
   voltBtn: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 18, alignItems: "center", marginTop: 10 },
   voltBtnText: { color: "#000", fontSize: 16, fontWeight: "900", letterSpacing: 2 },
   fineprint: { color: "#5A5A5A", fontSize: 11.5, textAlign: "center", marginTop: 16 },
+  skipBtn: { marginTop: 28, alignItems: "center" },
+  skipBtnText: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
 
   quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18 },
   counterRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },

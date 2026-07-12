@@ -242,9 +242,18 @@ export default function PlaylistScreen({ traits }) {
   const [saveState, setSaveState] = useState("idle");
   const [saveMsg, setSaveMsg] = useState("");
 
+  // "Cadence" stays capitalized (brand prefix); Activity/Mood segments are camelCase
+  const toCamel = (s) => {
+    const words = (s || "").split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "session";
+    return words
+      .map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)))
+      .join("");
+  };
+
   const playlistName = () => {
-    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label.replace(/\s+/g, "") || "Session";
-    const moodLabel = mood?.label || "Mixed";
+    const actLabel = toCamel(ACTIVITIES.find((a) => a.key === activity)?.label) || "session";
+    const moodLabel = toCamel(mood?.label) || "mixed";
     return `Cadence.${actLabel}.${moodLabel}`;
   };
 
@@ -441,7 +450,7 @@ export default function PlaylistScreen({ traits }) {
             multiline
           />
           <Pressable style={s.moodGo} onPress={confirmMood}><Text style={s.moodGoText}>BUILD MY PLAYLIST</Text></Pressable>
-          <Pressable onPress={skipMood}><Text style={s.moodSkip}>skip \u2014 just use activity</Text></Pressable>
+          <Pressable onPress={skipMood}><Text style={s.moodSkip}>skip {"\u2014"} just use activity</Text></Pressable>
         </View>
       </View>
     )}

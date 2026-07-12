@@ -1,11 +1,16 @@
 /**
  * Cadence backend
  * Runs the recommendation pipeline server-side: seed rules + mood
- * (multi-select bubbles + free text) + weather -> music discovery
- * (Deezer -> iTunes fallback) -> BPM/ISRC enrichment. Keeps the GetSongBPM
- * key off the phone (currently bundled client-side — a real leak risk on
- * a public repo) and gives one place to evolve the engine without an app
- * store update.
+ * (multi-select bubbles + free text) + weather -> cross-genre music
+ * discovery (searches every genre in the seed pool, not one random pick;
+ * Deezer -> iTunes fallback) -> BPM enrichment -> merge + drop repeat
+ * artists + sort by BPM proximity. Keeps the GetSongBPM key off the phone
+ * (was bundled client-side — a real leak risk on a public repo) and gives
+ * one place to evolve the engine without an app store update.
+ *
+ * traits is personality-optional: the client can send neutral {O:C:E:A:N:0.5}
+ * to skip onboarding — seedTarget's formulas produce zero personality shift
+ * at 0.5, so the playlist is driven by activity + mood + weather + time alone.
  *
  * The app still does Bayesian re-ranking + Spotify OAuth/save locally —
  * see the code comments in PlaylistScreen.js for why those stay on-device.
@@ -14,7 +19,7 @@ import express from "express";
 import cors from "cors";
 import { seedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
-import { searchTracks } from "./engine/musicProvider.js";
+import { searchAcrossGenres } from "./engine/musicProvider.js";
 import { fetchWeather, weatherToBpmShift } from "./engine/weather.js";
 
 const app = express();
@@ -56,9 +61,11 @@ app.post("/recommend", async (req, res) => {
     const target = seedTarget(traits, activity, combinedShift);
 
     // fetch a larger pool than we show, so removed tracks can be replaced
-    // from the "reserve" without a second network round trip
-    const pool = await searchTracks({
-      seedTerms: target.seedTerms,
+    // from the "reserve" without a second network round trip. Searches every
+    // genre in the (personality-filtered) seed pool, not just one random
+    // pick — merges results, drops repeat artists, sorts by BPM proximity.
+    const pool = await searchAcrossGenres({
+      seedPool: target.seedPool,
       bpmMin: target.bpmMin,
       bpmMax: target.bpmMax,
       limit: limit + 15,

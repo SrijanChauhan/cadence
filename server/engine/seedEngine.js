@@ -103,5 +103,8 @@ export function seedTarget(traits, activity, extraBpmShift = 0) {
   hi = Math.min(200, Math.round(hi));
   if (hi - lo < 12) hi = lo + 12; // keep the band searchable
 
-  return { bpmMin: lo, bpmMax: hi, seedTerms, explain };
+  // seedTerms: one pick, kept for display ("BPM · tuned to you"'s source genre).
+  // seedPool: the full (personality-filtered) list — searched across genre-by-
+  // genre for real cross-genre exploration instead of one random term.
+  return { bpmMin: lo, bpmMax: hi, seedTerms, seedPool, explain };
 }
