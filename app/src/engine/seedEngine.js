@@ -57,9 +57,10 @@ export const ACTIVITIES = Object.entries(ACTIVITY_BASE).map(([key, v]) => ({ key
 /**
  * @param {{O:number,C:number,E:number,A:number,N:number}} traits 0–1 normalized
  * @param {string} activity key from ACTIVITY_BASE
+ * @param {number} [moodShiftBpm] optional BPM nudge from the session's mood (see moodEngine.js)
  * @returns {{bpmMin:number,bpmMax:number,seedTerms:string,explain:string[]}}
  */
-export function seedTarget(traits, activity) {
+export function seedTarget(traits, activity, moodShiftBpm = 0) {
   const base = ACTIVITY_BASE[activity];
   if (!base) throw new Error(`Unknown activity: ${activity}`);
   const explain = [];
@@ -70,6 +71,12 @@ export function seedTarget(traits, activity) {
   const eShift = (traits.E - 0.5) * 20;
   lo += eShift; hi += eShift;
   if (Math.abs(eShift) > 4) explain.push(`${eShift > 0 ? "Raised" : "Lowered"} tempo ~${Math.abs(Math.round(eShift))} BPM for your ${eShift > 0 ? "higher" : "lower"} Extraversion`);
+
+  // session mood (free-text, analyzed) nudges tempo independently of personality
+  if (moodShiftBpm && Math.abs(moodShiftBpm) >= 3) {
+    lo += moodShiftBpm; hi += moodShiftBpm;
+    explain.push(`${moodShiftBpm > 0 ? "Boosted" : "Softened"} tempo ~${Math.abs(moodShiftBpm)} BPM for how you said you're feeling`);
+  }
 
   // Neuroticism narrows toward the calm end for stress-adjacent activities
   if ((activity === "deep_work" || activity === "wind_down" || activity === "calls") && traits.N > 0.6) {

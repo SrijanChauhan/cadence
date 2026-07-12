@@ -3,10 +3,12 @@
  * Free, no auth, works in India (Deezer's catalog is territory-blocked there).
  * Gives: 30s previews, artwork, popularity-ish ordering, and the Apple Music
  * URL directly (trackViewUrl) — no ISRC lookup hop needed for handoff.
- * Does NOT give: BPM. Tracks come back with bpm:null; the ranker falls back
- * to popularity and the Bayesian layer simply doesn't update on them until a
- * BPM source is added (see musicProvider notes).
+ * Does NOT give: BPM. Tracks come back with bpm:null from iTunes itself;
+ * enrichBpm (GetSongBPM) fills that in below so the ranker and the Bayesian
+ * layer both activate for iTunes-sourced tracks same as Deezer ones.
  */
+
+import { enrichBpm } from "./getSongBpm";
 
 const BASE = "https://itunes.apple.com/search";
 
@@ -17,7 +19,11 @@ export async function itunesSearchTracks({ seedTerms, limit = 25, country = "IN"
   const json = await res.json();
   const tracks = (json.results || []).map(normalize).filter((t) => t.id);
   onDiag(`itunes "${seedTerms}" (${country}) → ${tracks.length} tracks`);
-  return tracks;
+
+  const enriched = await enrichBpm(tracks, 5);
+  const withBpm = enriched.filter((t) => t.bpm != null).length;
+  onDiag(`getsongbpm enriched: ${withBpm}/${enriched.length} have BPM`);
+  return enriched;
 }
 
 function normalize(r) {

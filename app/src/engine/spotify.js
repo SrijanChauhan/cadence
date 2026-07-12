@@ -3,10 +3,13 @@
  *
  * Auth: Authorization Code with PKCE (no client secret — safe for mobile).
  * Flow:
- *   1. connectSpotify() opens Spotify's login in an in-app browser.
- *   2. User approves → Spotify redirects to cadence://spotify-auth?code=...
- *   3. App catches the deep link (wired in App.js), calls exchangeCode(code).
- *   4. createPlaylistFromTracks() searches each track by title+artist,
+ *   1. connectSpotify() opens Spotify's login in an in-app browser via
+ *      WebBrowser.openAuthSessionAsync, which resolves with the
+ *      cadence://spotify-auth?code=... redirect URL directly — no App.js
+ *      deep-link listener needed (openAuthSessionAsync doesn't fire one).
+ *   2. connectSpotify() extracts the code from that result and calls
+ *      exchangeCode(code) itself.
+ *   3. createPlaylistFromTracks() searches each track by title+artist,
  *      creates a playlist in the user's library, and adds the matches.
  *
  * Requires Spotify Premium on the connected account (Feb 2026 policy).
@@ -174,7 +177,9 @@ export async function createPlaylistFromTracks(tracks, { name = "Cadence Session
   });
 
   // add items (max 100 per request; we're well under)
-  await api(`/playlists/${playlist.id}/tracks`, {
+  // NB: POST /playlists/{id}/tracks was removed in Spotify's Feb 2026 API
+  // migration — /items is the replacement, same { uris } body shape.
+  await api(`/playlists/${playlist.id}/items`, {
     method: "POST",
     body: JSON.stringify({ uris }),
   });

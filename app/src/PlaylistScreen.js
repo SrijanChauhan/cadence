@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated,
+  View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput,
 } from "react-native";
 import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ACTIVITIES, seedTarget } from "./engine/seedEngine";
+import { analyzeFeeling, arousalToBpmShift } from "./engine/moodEngine";
 import { searchTracks } from "./engine/musicProvider";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks } from "./engine/spotify";
@@ -29,6 +30,9 @@ function BounceNumber({ value, style }) {
 
 export default function PlaylistScreen({ traits }) {
   const [activity, setActivity] = useState(null);
+  const [moodPromptFor, setMoodPromptFor] = useState(null); // activity key awaiting a feeling
+  const [feelingText, setFeelingText] = useState("");
+  const [mood, setMood] = useState(null); // { valence, arousal, label, words }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [diag, setDiag] = useState([]);
@@ -61,13 +65,23 @@ export default function PlaylistScreen({ traits }) {
     })).catch(() => {});
   }, [queue, activity]);
 
-  const load = async (act) => {
+  const load = async (act, moodResult = null) => {
     setActivity(act); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]); setQueue([]);
+    setMood(moodResult);
     const pushDiag = (m) => setDiag((d) => [...d, m]);
     try {
-      const t = seedTarget(traits, act);
+      const shift = moodResult ? arousalToBpmShift(moodResult.arousal) : 0;
+      const t = seedTarget(traits, act, shift);
       setTarget(t);
-      if (!buckets.current[act]) buckets.current[act] = newBucketState((t.bpmMin + t.bpmMax) / 2);
+      if (!buckets.current[act]) {
+        // restore learned Bayesian state for this mode if saved
+        try {
+          const savedB = await AsyncStorage.getItem(`cadence:bayes:${act}`);
+          buckets.current[act] = savedB ? JSON.parse(savedB) : newBucketState((t.bpmMin + t.bpmMax) / 2);
+        } catch {
+          buckets.current[act] = newBucketState((t.bpmMin + t.bpmMax) / 2);
+        }
+      }
       const results = await searchTracks({
         seedTerms: t.seedTerms, bpmMin: t.bpmMin, bpmMax: t.bpmMax, limit: 20, onDiag: pushDiag,
       });
@@ -90,6 +104,19 @@ export default function PlaylistScreen({ traits }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitFeeling = () => {
+    const result = analyzeFeeling(feelingText);
+    const act = moodPromptFor;
+    setMoodPromptFor(null);
+    load(act, result);
+  };
+
+  const skipFeeling = () => {
+    const act = moodPromptFor;
+    setMoodPromptFor(null);
+    load(act, null);
   };
 
   const play = async (track) => {
@@ -139,6 +166,7 @@ export default function PlaylistScreen({ traits }) {
   const giveFeedback = (track, type) => {
     setFeedback((f) => ({ ...f, [track.id]: type }));
     buckets.current[activity] = updateBucket(buckets.current[activity], track.bpm, type);
+    AsyncStorage.setItem(`cadence:bayes:${activity}`, JSON.stringify(buckets.current[activity])).catch(() => {});
     setTracks((ts) => rankTracks(ts, buckets.current[activity]));
   };
 
@@ -153,6 +181,12 @@ export default function PlaylistScreen({ traits }) {
     enqueue(track); // favouriting queues it up to play next in line
   };
 
+  const playlistName = () => {
+    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label.replace(/\s+/g, "") || "Session";
+    const moodLabel = mood?.label || "Mixed";
+    return `Cadence.${actLabel}.${moodLabel}`;
+  };
+
   const saveToSpotify = async () => {
     try {
       if (!hasSpotifyAuth()) {
@@ -165,8 +199,8 @@ export default function PlaylistScreen({ traits }) {
       setSaveMsg("Building your Spotify playlist…");
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
       const { matchedCount, totalCount } = await createPlaylistFromTracks(list, {
-        name: `Cadence · ${activity || "session"}`,
-        description: "Made by Cadence — personality-tuned.",
+        name: playlistName(),
+        description: `Made by Cadence — personality + mood tuned (${mood?.label || "no mood set"}).`,
       });
       setSaveState("done");
       setSaveMsg(`Saved ${matchedCount}/${totalCount} tracks to Spotify. Open Spotify → Library.`);
@@ -192,7 +226,7 @@ export default function PlaylistScreen({ traits }) {
       <Text style={s.kicker}>PICK A MODE</Text>
       <View style={s.chips}>
         {ACTIVITIES.map((a) => (
-          <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => load(a.key)}>
+          <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => { setFeelingText(""); setMoodPromptFor(a.key); }}>
             <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
           </Pressable>
         ))}
@@ -204,6 +238,9 @@ export default function PlaylistScreen({ traits }) {
             <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
             <Text style={s.targetUnit}>BPM · "{target.seedTerms}"</Text>
             {target.explain.map((e, i) => (<Text key={i} style={s.explain}>• {e}</Text>))}
+            {mood && mood.label !== "Neutral" && (
+              <Text style={s.moodTag}>feeling: {mood.label}{mood.words.length ? ` (${mood.words.join(", ")})` : ""}</Text>
+            )}
           </View>
           {post && (
             <View style={s.lambdaBox}>
@@ -278,7 +315,7 @@ export default function PlaylistScreen({ traits }) {
       {tracks.length > 0 && (
         <Text style={s.footnote}>
           ♥ favourites a track and adds it to the play queue — it'll auto-play in order after the current preview.
-           opens the full song in Apple Music. Tap ☰ in the bar to see the queue.
+           opens the full song in Apple Music. Tap ☰ in the bar to see the queue. Tempo data by GetSongBPM.com.
         </Text>
       )}
     </ScrollView>
@@ -336,6 +373,28 @@ export default function PlaylistScreen({ traits }) {
         </Pressable>
       </View>
     )}
+
+    {moodPromptFor && (
+      <View style={s.moodOverlay}>
+        <View style={s.moodCard}>
+          <Text style={s.moodKicker}>BEFORE WE BUILD IT</Text>
+          <Text style={s.moodQ}>How are you feeling right now?</Text>
+          <TextInput
+            style={s.moodInput}
+            placeholder="e.g. a bit tired but hopeful, restless, calm and focused…"
+            placeholderTextColor="#5A5A5A"
+            value={feelingText}
+            onChangeText={setFeelingText}
+            multiline
+            autoFocus
+          />
+          <Pressable style={s.moodGo} onPress={submitFeeling}>
+            <Text style={s.moodGoText}>BUILD MY PLAYLIST</Text>
+          </Pressable>
+          <Pressable onPress={skipFeeling}><Text style={s.moodSkip}>skip — just use activity</Text></Pressable>
+        </View>
+      </View>
+    )}
     </View>
   );
 }
@@ -353,6 +412,7 @@ const s = StyleSheet.create({
   targetBig: { color: "#FFF", fontSize: 44, fontWeight: "900", letterSpacing: -2, lineHeight: 48 },
   targetUnit: { color: "#8A8A8A", fontSize: 12.5, fontWeight: "700", marginBottom: 6 },
   explain: { color: "#6E6E6E", fontSize: 11.5, lineHeight: 16 },
+  moodTag: { color: VOLT, fontSize: 11.5, fontWeight: "800", marginTop: 6 },
   lambdaBox: { alignItems: "center" },
   lambdaNum: { color: VOLT, fontSize: 56, fontWeight: "900", letterSpacing: -2, lineHeight: 58 },
   lambdaLabel: { color: "#6E6E6E", fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
@@ -385,6 +445,15 @@ const s = StyleSheet.create({
   nowCover: { width: 44, height: 44, borderRadius: 12 },
   nowTitle: { color: "#FFF", fontSize: 13.5, fontWeight: "800" },
   nowArtist: { color: "#7A7A7A", fontSize: 11, fontWeight: "600", marginTop: 1 },
+
+  moodOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000000E6", justifyContent: "center", paddingHorizontal: 24 },
+  moodCard: { backgroundColor: "#111", borderRadius: 22, borderWidth: 1, borderColor: "#242424", padding: 22 },
+  moodKicker: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 10 },
+  moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 16 },
+  moodInput: { backgroundColor: "#000", borderRadius: 14, borderWidth: 1, borderColor: "#242424", color: "#EDEDED", fontSize: 14.5, padding: 14, minHeight: 90, textAlignVertical: "top", marginBottom: 16 },
+  moodGo: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
+  moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+  moodSkip: { color: "#7A7A7A", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
 
   queuePanel: { position: "absolute", left: 12, right: 12, bottom: 82, backgroundColor: "#0C0C0C", borderRadius: 20, borderWidth: 1, borderColor: "#222", padding: 12 },
   queueHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },

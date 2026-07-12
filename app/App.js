@@ -1,11 +1,43 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView, StyleSheet, View, Text, Pressable } from "react-native";
+import { SafeAreaView, StyleSheet, View, Text, Pressable, ActivityIndicator } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
 
+const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
+
 export default function App() {
   const [traits, setTraits] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // on launch, restore a saved personality profile if one exists
+  useEffect(() => {
+    AsyncStorage.getItem(PROFILE_KEY)
+      .then((raw) => { if (raw) setTraits(JSON.parse(raw)); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const saveProfile = async (vector) => {
+    setTraits(vector);
+    try { await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(vector)); } catch {}
+  };
+
+  const recalibrate = async () => {
+    setTraits(null);
+    try { await AsyncStorage.removeItem(PROFILE_KEY); } catch {}
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safe, { justifyContent: "center", alignItems: "center" }]}>
+        <StatusBar style="light" />
+        <ActivityIndicator color="#D6FF3D" />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
@@ -13,14 +45,14 @@ export default function App() {
         <View style={{ flex: 1 }}>
           <View style={styles.top}>
             <Text style={styles.wordmark}>CADENCE</Text>
-            <Pressable onPress={() => setTraits(null)}>
+            <Pressable onPress={recalibrate}>
               <Text style={styles.retake}>recalibrate</Text>
             </Pressable>
           </View>
           <PlaylistScreen traits={traits} />
         </View>
       ) : (
-        <OnboardingScreen onComplete={setTraits} />
+        <OnboardingScreen onComplete={saveProfile} />
       )}
     </SafeAreaView>
   );
