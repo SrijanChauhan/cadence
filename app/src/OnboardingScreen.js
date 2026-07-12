@@ -1,24 +1,25 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, Animated, Easing, Platform,
+  View, Text, Pressable, StyleSheet, Animated, Easing, Dimensions,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 
 /**
- * Cadence — Onboarding (Bounce edition)
- * Visual language: black / volt / huge rounded 900-weight numerals /
- * spring-bounce on the numbers. Assessment logic unchanged (Mini-IPIP).
+ * Cadence — Onboarding (Ball-surface edition)
+ * The BACKGROUND is the translucent orange bouncy ball — gradient-ish
+ * light falloff, sheen, freckled texture, and it visibly "gives" (squash)
+ * wherever you touch, with a rubbery ripple. No separate ball props.
+ * Text color is warm dark-on-orange for contrast, everything still bounces.
+ * Questions flow async (shuffled, no hard page breaks). Ends in a
+ * concoction swirl, no results shown, then silently hands off the vector.
  */
 
-const VOLT = "#D6FF3D";
+const { width: W, height: H } = Dimensions.get("window");
 
-const TRAITS = [
-  { key: "O", name: "Openness", sub: "imagination · variety" },
-  { key: "C", name: "Conscientiousness", sub: "order · follow-through" },
-  { key: "E", name: "Extraversion", sub: "energy · sociability" },
-  { key: "A", name: "Agreeableness", sub: "warmth · cooperation" },
-  { key: "N", name: "Neuroticism", sub: "emotional sensitivity" },
-];
+const BALL = "#FF8A2A";     // base ball color
+const INK = "#2B1400";      // primary text — deep espresso, reads on orange
+const INK_SOFT = "#6A3612"; // secondary text
+
+const ESSENCE_COLORS = ["#FFF3E2", "#2B1400", "#FFFFFF", "#5C3013", "#FFD9A8"];
 
 const ITEMS = [
   { t: "I am the life of the party.", trait: "E", rev: false },
@@ -51,211 +52,278 @@ const LIKERT = [
   { v: 5, label: "Strongly agree" },
 ];
 
-const DESC = {
-  O: { hi: "Drawn to novelty, texture, the unfamiliar.", mid: "Open to new sounds, anchored by favorites.", lo: "Prefers the familiar and the proven." },
-  C: { hi: "Structured; likes order and clean momentum.", mid: "Balances routine with room to drift.", lo: "Spontaneous; goes where the moment leads." },
-  E: { hi: "Energized by people and forward motion.", mid: "Comfortable in company or solitude.", lo: "Recharges in quieter, low-key settings." },
-  A: { hi: "Tuned into others; warm and cooperative.", mid: "Considerate, with a mind of your own.", lo: "Direct, skeptical, independent-minded." },
-  N: { hi: "Feels things intensely; moods shift.", mid: "Steady, with the occasional swing.", lo: "Even-keeled and hard to rattle." },
-};
+// ---------- the ball-surface background ----------
 
-const bucket = (p) => (p >= 60 ? "hi" : p <= 40 ? "lo" : "mid");
+function makeBus() {
+  const subs = new Map(); let n = 0;
+  return {
+    subscribe(fn) { subs.set(++n, fn); return n; },
+    unsubscribe(id) { subs.delete(id); },
+    emit(v) { subs.forEach((fn) => fn(v)); },
+  };
+}
 
-/** A number that bounces in with spring physics whenever its value changes. */
-function BounceNumber({ value, style }) {
-  const scale = useRef(new Animated.Value(0.3)).current;
+/** freckle texture grid — computed once */
+function useFreckles(count = 46) {
+  return useMemo(() => Array.from({ length: count }, (_, i) => ({
+    x: (i * 137.5) % 100,               // golden-angle scatter, deterministic
+    y: ((i * 71) % 100),
+    r: 1.5 + ((i * 13) % 5),
+    o: 0.05 + ((i * 7) % 10) / 100,
+  })), [count]);
+}
+
+/** Whole-screen ball surface: sheen + texture + gives on touch (squash + ripple). */
+function BallSurface({ bus, children }) {
+  const squash = useRef(new Animated.Value(1)).current;
+  const stretch = useRef(new Animated.Value(1)).current;
+  const [ripples, setRipples] = useState([]);
+  const freckles = useFreckles();
+
   useEffect(() => {
-    scale.setValue(0.3);
-    Animated.spring(scale, { toValue: 1, friction: 3.2, tension: 140, useNativeDriver: true }).start();
-  }, [value]);
+    const id = bus.subscribe(({ x, y }) => {
+      // whole surface gives slightly — rubbery squash/stretch
+      Animated.sequence([
+        Animated.parallel([
+          Animated.spring(squash, { toValue: 0.985, friction: 3.5, tension: 140, useNativeDriver: true }),
+          Animated.spring(stretch, { toValue: 1.012, friction: 3.5, tension: 140, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.spring(squash, { toValue: 1, friction: 3, tension: 90, useNativeDriver: true }),
+          Animated.spring(stretch, { toValue: 1, friction: 3, tension: 90, useNativeDriver: true }),
+        ]),
+      ]).start();
+
+      // rubbery ripple ring from the touch point
+      const rid = Date.now() + Math.random();
+      const scale = new Animated.Value(0);
+      const opacity = new Animated.Value(0.45);
+      setRipples((rs) => [...rs, { id: rid, x, y, scale, opacity }]);
+      Animated.parallel([
+        Animated.timing(scale, { toValue: 1, duration: 650, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0, duration: 650, useNativeDriver: true }),
+      ]).start(() => setRipples((rs) => rs.filter((r) => r.id !== rid)));
+    });
+    return () => bus.unsubscribe(id);
+  }, []);
+
   return (
-    <Animated.Text style={[style, { transform: [{ scale }] }]}>{value}</Animated.Text>
+    <Animated.View style={[s.surface, { transform: [{ scaleX: stretch }, { scaleY: squash }] }]}>
+      {/* base ball tint */}
+      <View style={s.baseTint} />
+      {/* light falloff — brighter upper-left, darker lower-right, like a lit sphere */}
+      <View style={s.lightTL} />
+      <View style={s.shadeBR} />
+      {/* big soft specular sheen */}
+      <View style={s.sheen} />
+      {/* freckle texture across the whole surface */}
+      {freckles.map((f, i) => (
+        <View key={i} style={{
+          position: "absolute",
+          left: `${f.x}%`, top: `${f.y}%`,
+          width: f.r, height: f.r, borderRadius: f.r,
+          backgroundColor: `rgba(43,20,0,${f.o})`,
+        }} />
+      ))}
+      {/* touch ripples */}
+      {ripples.map((r) => (
+        <Animated.View key={r.id} pointerEvents="none" style={{
+          position: "absolute", left: r.x - 90, top: r.y - 90, width: 180, height: 180, borderRadius: 90,
+          borderWidth: 2, borderColor: "#FFF6EA",
+          opacity: r.opacity,
+          transform: [{ scale: r.scale.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1.6] }) }],
+        }} />
+      ))}
+      {children}
+    </Animated.View>
   );
 }
 
-export default function OnboardingScreen({ onComplete }) {
-  const [screen, setScreen] = useState("intro");
-  const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState(Array(ITEMS.length).fill(null));
+// ---------- bouncy text ----------
 
-  const answer = (v) => {
-    const next = [...answers];
-    next[idx] = v;
-    setAnswers(next);
-    setTimeout(() => {
-      if (idx < ITEMS.length - 1) setIdx(idx + 1);
-      else setScreen("results");
-    }, 150);
+function BounceText({ children, style, delay = 0 }) {
+  const scale = useRef(new Animated.Value(0.2)).current;
+  useEffect(() => {
+    Animated.spring(scale, { toValue: 1, friction: 3.4, tension: 130, delay, useNativeDriver: true }).start();
+  }, []);
+  const poke = () => {
+    scale.setValue(0.78);
+    Animated.spring(scale, { toValue: 1, friction: 2.8, tension: 160, useNativeDriver: true }).start();
   };
+  return (
+    <Pressable onPress={poke}>
+      <Animated.Text style={[style, { transform: [{ scale }] }]}>{children}</Animated.Text>
+    </Pressable>
+  );
+}
 
-  const scores = () => {
+// ---------- main flow ----------
+
+export default function OnboardingScreen({ onComplete }) {
+  const [phase, setPhase] = useState("intro");
+  const [idx, setIdx] = useState(0);
+  const answers = useRef({});
+  const bus = useMemo(makeBus, []);
+  const order = useMemo(() => [...ITEMS].sort(() => Math.random() - 0.5), []);
+
+  const vector = () => {
     const sums = { O: 0, C: 0, E: 0, A: 0, N: 0 };
-    ITEMS.forEach((it, i) => {
-      const r = answers[i] ?? 3;
+    order.forEach((it, i) => {
+      const r = answers.current[i] ?? 3;
       sums[it.trait] += it.rev ? 6 - r : r;
     });
     const out = {};
-    Object.keys(sums).forEach((k) => (out[k] = Math.round(((sums[k] - 4) / 16) * 100)));
+    Object.keys(sums).forEach((k) => (out[k] = +(((sums[k] - 4) / 16)).toFixed(2)));
     return out;
   };
 
-  const restart = () => { setAnswers(Array(ITEMS.length).fill(null)); setIdx(0); setScreen("intro"); };
+  const answer = (v) => {
+    answers.current[idx] = v;
+    if (idx < order.length - 1) setIdx(idx + 1);
+    else setPhase("concoction");
+  };
 
   return (
-    <View style={s.root}>
-      {screen === "intro" && <Intro onStart={() => setScreen("quiz")} />}
-      {screen === "quiz" && (
-        <Quiz idx={idx} answers={answers} onAnswer={answer} onBack={() => idx > 0 && setIdx(idx - 1)} />
-      )}
-      {screen === "results" && <Results data={scores()} onRestart={restart} onComplete={onComplete} />}
+    <View
+      style={{ flex: 1 }}
+      onStartShouldSetResponder={() => true}
+      onResponderGrant={(e) => bus.emit({ x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })}
+    >
+      <BallSurface bus={bus}>
+        {phase === "intro" && <Intro onStart={() => setPhase("quiz")} />}
+        {phase === "quiz" && <Quiz item={order[idx]} idx={idx} total={order.length} onAnswer={answer} />}
+        {phase === "concoction" && <Concoction onDone={() => onComplete(vector())} />}
+      </BallSurface>
     </View>
   );
 }
 
 function Intro({ onStart }) {
+  const btnScale = useRef(new Animated.Value(1)).current;
+  const press = () => {
+    Animated.sequence([
+      Animated.spring(btnScale, { toValue: 0.85, friction: 3, tension: 200, useNativeDriver: true }),
+      Animated.spring(btnScale, { toValue: 1, friction: 2.6, tension: 160, useNativeDriver: true }),
+    ]).start(() => onStart());
+  };
   return (
-    <View style={s.center}>
-      <Text style={s.kicker}>CADENCE</Text>
-      <BounceNumber value="2:00" style={s.mega} />
-      <Text style={s.megaLabel}>twenty prompts. two minutes.{"\n"}zero right answers.</Text>
-      <Text style={s.introBody}>
-        A quick read on how you're wired — it seeds your first playlists before we've heard a single skip.
-      </Text>
-      <Pressable style={s.voltBtn} onPress={onStart}>
-        <Text style={s.voltBtnText}>START</Text>
-      </Pressable>
-      <Text style={s.fineprint}>Mini-IPIP · validated Big Five short form</Text>
+    <View style={s.centerFill}>
+      <BounceText style={s.kicker} delay={100}>CADENCE</BounceText>
+      <BounceText style={s.title} delay={220}>let's bounce{"\n"}to your beat.</BounceText>
+      <BounceText style={s.sub} delay={380}>twenty tiny questions. touch the screen — it gives.</BounceText>
+      <Animated.View style={{ transform: [{ scale: btnScale }], marginTop: 26 }}>
+        <Pressable style={s.btn} onPress={press}>
+          <Text style={s.btnText}>START</Text>
+        </Pressable>
+      </Animated.View>
     </View>
   );
 }
 
-function Quiz({ idx, answers, onAnswer, onBack }) {
-  const item = ITEMS[idx];
+function Quiz({ item, idx, total, onAnswer }) {
+  const pressScales = useRef(LIKERT.map(() => new Animated.Value(1))).current;
+  const pick = (i, v) => {
+    Animated.sequence([
+      Animated.spring(pressScales[i], { toValue: 0.85, friction: 3, tension: 220, useNativeDriver: true }),
+      Animated.spring(pressScales[i], { toValue: 1, friction: 2.4, tension: 150, useNativeDriver: true }),
+    ]).start();
+    setTimeout(() => onAnswer(v), 140);
+  };
   return (
-    <View style={s.quizWrap}>
-      <View style={s.counterRow}>
-        <BounceNumber value={String(idx + 1).padStart(2, "0")} style={s.counter} />
-        <Text style={s.counterTotal}>/ 20</Text>
-      </View>
-
-      <Text style={s.prompt}>{item.t}</Text>
-
-      <View style={s.likertWrap}>
-        {LIKERT.map((o) => {
-          const active = answers[idx] === o.v;
-          return (
-            <Pressable key={o.v} style={[s.opt, active && s.optActive]} onPress={() => onAnswer(o.v)}>
-              <Text style={[s.optLabel, active && s.optLabelActive]}>{o.label}</Text>
+    <View style={s.quizFill}>
+      <BounceText style={s.counter} delay={0}>{`${idx + 1} · ${total}`}</BounceText>
+      <BounceText key={idx} style={s.prompt} delay={60}>{item.t}</BounceText>
+      <View style={{ marginTop: 20 }}>
+        {LIKERT.map((o, i) => (
+          <Animated.View key={o.v} style={{ transform: [{ scale: pressScales[i] }] }}>
+            <Pressable style={s.opt} onPress={() => pick(i, o.v)}>
+              <Text style={s.optLabel}>{o.label}</Text>
             </Pressable>
-          );
-        })}
+          </Animated.View>
+        ))}
       </View>
-
-      <Pressable onPress={onBack} disabled={idx === 0} style={s.backBtn}>
-        <Text style={[s.back, idx === 0 && s.backDisabled]}>← back</Text>
-      </Pressable>
     </View>
   );
 }
 
-function Results({ data, onRestart, onComplete }) {
-  const anims = useRef(TRAITS.map(() => new Animated.Value(0))).current;
-  const [copied, setCopied] = useState(false);
+/** Five essence droplets swirl into one, then fade — no numbers shown. */
+function Concoction({ onDone }) {
+  const anims = useRef(ESSENCE_COLORS.map(() => new Animated.ValueXY({
+    x: Math.random() * W * 0.6 + W * 0.1,
+    y: Math.random() * H * 0.35 + H * 0.18,
+  }))).current;
+  const scales = useRef(ESSENCE_COLORS.map(() => new Animated.Value(1))).current;
+  const bigScale = useRef(new Animated.Value(0)).current;
+  const cx = W / 2 - 36, cy = H * 0.4;
+
   useEffect(() => {
-    Animated.stagger(80, TRAITS.map((t, i) =>
-      Animated.spring(anims[i], { toValue: data[t.key], friction: 5, tension: 60, useNativeDriver: false })
-    )).start();
+    const orbit = (a, r, phase) =>
+      Animated.timing(a, {
+        toValue: { x: cx + Math.cos(phase) * r, y: cy + Math.sin(phase) * r },
+        duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true,
+      });
+    Animated.stagger(90, anims.map((a, i) => Animated.sequence([
+      orbit(a, 110, i * 1.3),
+      orbit(a, 60, i * 1.3 + 2),
+      Animated.parallel([
+        Animated.spring(a, { toValue: { x: cx, y: cy }, friction: 4, tension: 70, useNativeDriver: true }),
+        Animated.timing(scales[i], { toValue: 0.2, duration: 500, delay: 250, useNativeDriver: true }),
+      ]),
+    ]))).start(() => {
+      Animated.spring(bigScale, { toValue: 1, friction: 3, tension: 90, useNativeDriver: true }).start();
+      setTimeout(onDone, 1200);
+    });
   }, []);
 
-  const vector = TRAITS.reduce((a, t) => ({ ...a, [t.key]: +(data[t.key] / 100).toFixed(2) }), {});
-  const copy = async () => { await Clipboard.setStringAsync(JSON.stringify(vector)); setCopied(true); setTimeout(() => setCopied(false), 1600); };
-
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={s.resultsWrap} showsVerticalScrollIndicator={false}>
-      <Text style={s.kicker}>YOUR FIVE</Text>
-
-      <View style={s.eq}>
-        {TRAITS.map((t, i) => (
-          <View style={s.eqBand} key={t.key}>
-            <BounceNumber value={data[t.key]} style={s.eqScore} />
-            <View style={s.eqTrack}>
-              <Animated.View style={[s.eqFill, { height: anims[i].interpolate({ inputRange: [0, 100], outputRange: ["4%", "100%"] }) }]} />
-            </View>
-            <Text style={s.eqKey}>{t.key}</Text>
-          </View>
-        ))}
-      </View>
-
-      <View style={{ marginTop: 26 }}>
-        {TRAITS.map((t) => (
-          <View style={s.readRow} key={t.key}>
-            <Text style={s.readKey}>{t.key}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={s.readName}>{t.name}</Text>
-              <Text style={s.readDesc}>{DESC[t.key][bucket(data[t.key])]}</Text>
-            </View>
-            <Text style={s.readPct}>{data[t.key]}</Text>
-          </View>
-        ))}
-      </View>
-
-      {onComplete && (
-        <Pressable style={s.voltBtn} onPress={() => onComplete(vector)}>
-          <Text style={s.voltBtnText}>BUILD MY PLAYLISTS</Text>
-        </Pressable>
-      )}
-
-      <View style={s.rowSplit}>
-        <Pressable onPress={copy}><Text style={s.back}>{copied ? "copied" : "copy vector JSON"}</Text></Pressable>
-        <Pressable onPress={onRestart}><Text style={s.back}>retake</Text></Pressable>
-      </View>
-    </ScrollView>
+    <View style={s.centerFill} pointerEvents="none">
+      <BounceText style={s.mixLabel} delay={80}>mixing your blend…</BounceText>
+      {ESSENCE_COLORS.map((c, i) => (
+        <Animated.View key={i} style={{
+          position: "absolute", width: 72, height: 72, borderRadius: 36,
+          backgroundColor: c, opacity: 0.88,
+          transform: [...anims[i].getTranslateTransform(), { scale: scales[i] }],
+        }} />
+      ))}
+      <Animated.View style={{
+        position: "absolute", left: cx - 34, top: cy - 34,
+        width: 140, height: 140, borderRadius: 70,
+        backgroundColor: "#FFF6EA", opacity: 0.92,
+        transform: [{ scale: bigScale }],
+      }} />
+    </View>
   );
 }
 
-const rounded = Platform.select({ ios: "System", android: "sans-serif-black", default: "System" });
-
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" },
-  center: { flex: 1, paddingHorizontal: 26, justifyContent: "center" },
-  kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
-
-  mega: { color: VOLT, fontSize: 108, fontWeight: "900", fontFamily: rounded, letterSpacing: -4, lineHeight: 112 },
-  megaLabel: { color: "#FFF", fontSize: 22, fontWeight: "800", lineHeight: 28, marginTop: 6, marginBottom: 14 },
-  introBody: { color: "#9A9A9A", fontSize: 15, lineHeight: 22, marginBottom: 30 },
-
-  voltBtn: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 18, alignItems: "center", marginTop: 10 },
-  voltBtnText: { color: "#000", fontSize: 16, fontWeight: "900", letterSpacing: 2 },
-  fineprint: { color: "#5A5A5A", fontSize: 11.5, textAlign: "center", marginTop: 16 },
-
-  quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18 },
-  counterRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },
-  counter: { color: VOLT, fontSize: 84, fontWeight: "900", fontFamily: rounded, letterSpacing: -3 },
-  counterTotal: { color: "#4A4A4A", fontSize: 22, fontWeight: "900" },
-  prompt: { color: "#FFF", fontSize: 26, fontWeight: "800", lineHeight: 33, marginBottom: 28, minHeight: 66 },
-
-  likertWrap: { gap: 10 },
-  opt: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 15, paddingHorizontal: 22, backgroundColor: "#0A0A0A" },
-  optActive: { backgroundColor: VOLT, borderColor: VOLT },
-  optLabel: { color: "#DADADA", fontSize: 15, fontWeight: "700" },
-  optLabelActive: { color: "#000" },
-  backBtn: { marginTop: 22 },
-  back: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
-  backDisabled: { opacity: 0.3 },
-
-  resultsWrap: { paddingHorizontal: 26, paddingTop: 16, paddingBottom: 46 },
-  eq: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 220, paddingTop: 12 },
-  eqBand: { alignItems: "center", justifyContent: "flex-end", height: "100%", flex: 1 },
-  eqScore: { color: VOLT, fontSize: 24, fontWeight: "900", fontFamily: rounded, marginBottom: 6 },
-  eqTrack: { width: 34, flex: 1, backgroundColor: "#111", borderRadius: 17, justifyContent: "flex-end", overflow: "hidden" },
-  eqFill: { width: "100%", borderRadius: 17, backgroundColor: VOLT, minHeight: 8 },
-  eqKey: { color: "#FFF", fontSize: 16, fontWeight: "900", marginTop: 8 },
-
-  readRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 13, borderBottomWidth: 1, borderColor: "#161616" },
-  readKey: { color: VOLT, fontSize: 20, fontWeight: "900", width: 26 },
-  readName: { color: "#FFF", fontSize: 14.5, fontWeight: "800" },
-  readDesc: { color: "#8A8A8A", fontSize: 12.5, lineHeight: 17, marginTop: 2 },
-  readPct: { color: "#FFF", fontSize: 18, fontWeight: "900" },
-
-  rowSplit: { flexDirection: "row", justifyContent: "space-between", marginTop: 22 },
+  surface: { flex: 1, overflow: "hidden", backgroundColor: BALL },
+  baseTint: { ...StyleSheet.absoluteFillObject, backgroundColor: BALL },
+  lightTL: {
+    position: "absolute", top: -W * 0.4, left: -W * 0.4,
+    width: W * 1.3, height: W * 1.3, borderRadius: W * 0.65,
+    backgroundColor: "#FFFFFF", opacity: 0.14,
+  },
+  shadeBR: {
+    position: "absolute", bottom: -W * 0.5, right: -W * 0.5,
+    width: W * 1.2, height: W * 1.2, borderRadius: W * 0.6,
+    backgroundColor: "#3A1400", opacity: 0.16,
+  },
+  sheen: {
+    position: "absolute", top: H * 0.04, left: -W * 0.15,
+    width: W * 0.9, height: W * 0.5, borderRadius: W * 0.45,
+    backgroundColor: "#FFFFFF", opacity: 0.08,
+    transform: [{ rotate: "-18deg" }],
+  },
+  centerFill: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 28 },
+  quizFill: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 26 },
+  kicker: { color: INK, fontSize: 13, letterSpacing: 5, fontWeight: "900", marginBottom: 10, textAlign: "center" },
+  title: { color: INK, fontSize: 40, fontWeight: "900", lineHeight: 46, letterSpacing: -1, textAlign: "center" },
+  sub: { color: INK_SOFT, fontSize: 15, lineHeight: 21, marginTop: 14, fontWeight: "700", textAlign: "center" },
+  btn: { backgroundColor: INK, borderRadius: 999, paddingVertical: 17, alignItems: "center", width: W * 0.7 },
+  btnText: { color: "#FFE9D2", fontSize: 16, fontWeight: "900", letterSpacing: 2 },
+  counter: { color: INK, fontSize: 15, fontWeight: "900", letterSpacing: 2, marginBottom: 10, textAlign: "center" },
+  prompt: { color: INK, fontSize: 27, fontWeight: "800", lineHeight: 34, minHeight: 70, textAlign: "center" },
+  opt: { borderRadius: 999, borderWidth: 1.5, borderColor: "#2B140033", backgroundColor: "#FFF6EA55", paddingVertical: 14, paddingHorizontal: 22, marginBottom: 9, alignItems: "center", width: W * 0.78 },
+  optLabel: { color: INK, fontSize: 15, fontWeight: "700", textAlign: "center" },
+  mixLabel: { color: INK, fontSize: 16, fontWeight: "800", textAlign: "center", position: "absolute", top: H * 0.16, alignSelf: "center" },
 });
