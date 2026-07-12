@@ -1,59 +1,32 @@
 /**
  * Cadence — unified music provider
- * Tries Deezer first (has BPM). If Deezer is territory-blocked — detectable
- * as data:[] with total>0, exactly what an India IP sees — falls back to the
- * iTunes Search API (no BPM, but previews + direct Apple Music links).
- * The chosen provider is remembered for the session so we don't re-probe.
  *
- * BPM note: with iTunes as source, tracks have bpm:null. The Bayesian layer
- * ignores null-BPM feedback (by design), so λ stays at 100% until a BPM
- * source is added (e.g. GetSongBPM lookup — future step). Everything else
- * (previews, feedback capture, Apple handoff, picks) works fully.
+ * iTunes Search API only. Previously tried Deezer first (native BPM) with
+ * an iTunes fallback for territory-blocked requests (e.g. from India), but
+ * that's been dropped: every track handed to the client must have a
+ * verified Apple Music redirect (see appleMusicResolve.js), and Deezer
+ * tracks require resolving that after the fact via ISRC/text-search —
+ * which, measured live in production, fails 75-100% of the time for
+ * instrumental/ambient/focus genres specifically (different masters/
+ * catalogs across platforms), sometimes returning zero playable tracks for
+ * Deep Work and Calls modes entirely. iTunes tracks carry their Apple
+ * Music URL directly from the same search that found them, so they're
+ * verified by construction with zero drop rate — that's the whole
+ * category of failure this removes, not just a mitigation.
+ *
+ * BPM comes from GetSongBPM enrichment (iTunes itself has no tempo data).
+ * The Bayesian layer ignores null-BPM feedback (by design), so λ stays at
+ * 100% only for tracks GetSongBPM couldn't match — same graceful
+ * degradation as before, just without Deezer as an alternate BPM source.
  */
 
-import { searchTracks as deezerSearch } from "./deezer.js";
 import { itunesSearchTracks } from "./itunes.js";
 import { enrichBpm } from "./getSongBpm.js";
 import { filterToAppleMusicAvailable } from "./appleMusicResolve.js";
 
-// 'deezer' | 'itunes' — sticky WITHIN one /recommend call (avoids re-probing
-// Deezer on every genre term in the same request), but must be reset at the
-// start of each request via resetProvider() — this used to be a true module-
-// level global with no reset, meaning the first successful probe from ANY
-// user locked the provider for every other user for the server's entire
-// uptime. See server/index.js's /recommend handler for the reset call.
-let provider = null;
-
-export function resetProvider() {
-  provider = null;
-}
-
 export async function searchTracks(opts) {
   const { onDiag = () => {} } = opts;
-
-  if (provider === "itunes") return enrichItunes(await itunesSearchTracks(opts), onDiag);
-  if (provider === "deezer") return deezerSearch(opts);
-
-  // probe: try Deezer once
-  try {
-    const results = await deezerSearch(opts);
-    if (results.length > 0) {
-      provider = "deezer";
-      onDiag("provider locked: deezer (BPM available)");
-      return results;
-    }
-    onDiag("deezer returned empty — likely territory-blocked; switching to iTunes");
-  } catch (e) {
-    onDiag(`deezer failed (${e.message}) — switching to iTunes`);
-  }
-
-  provider = "itunes";
-  onDiag("provider locked: itunes — enriching BPM (GetSongBPM)");
   return enrichItunes(await itunesSearchTracks(opts), onDiag);
-}
-
-export function currentProvider() {
-  return provider;
 }
 
 /**
@@ -99,8 +72,6 @@ function isStockMusic(track) {
  * artists (first occurrence wins — results are already roughly rank/BPM-
  * ordered per source), then sorts the merged pool by closeness to the
  * target BPM band so genre variety doesn't come at the cost of tempo match.
- * First term runs alone so the sticky Deezer/iTunes provider decision locks
- * before the rest fire in parallel.
  */
 export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20, onDiag = () => {} }) {
   const terms = seedPool && seedPool.length ? seedPool : [undefined];
@@ -133,10 +104,9 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
   }
   onDiag(`merged ${merged.length} → ${deduped.length} after dropping repeat artists`);
 
-  // every track shown to the client must actually redirect to something
-  // real on tap — iTunes tracks are verified by construction, Deezer tracks
-  // get resolved (ISRC, then validated text search) and dropped if neither
-  // finds a real match
+  // defensive pass-through: every current track already carries appleUrl
+  // (iTunes-only source, verified by construction) so this is a fast no-op
+  // in practice, kept as a safety net if that ever stops being true
   const verified = await filterToAppleMusicAvailable(deduped, "IN", onDiag);
 
   const mid = (bpmMin + bpmMax) / 2;

@@ -4,11 +4,12 @@
  * (multi-select bubbles + free text) + weather -> cross-genre music
  * discovery (searches every genre in the seed pool, plus your real Spotify
  * top artists and their real similar artists from Last.fm, not one random
- * genre pick; Deezer -> iTunes fallback) -> BPM enrichment -> merge + drop
- * stock/library-music junk + repeat artists + sort by BPM proximity. Keeps
- * the GetSongBPM/Last.fm keys off the phone (GetSongBPM was bundled
- * client-side at first — a real leak risk on a public repo) and gives one
- * place to evolve the engine without an app store update.
+ * genre pick; iTunes only — see musicProvider.js for why Deezer was
+ * dropped) -> BPM enrichment -> merge + drop stock/library-music junk +
+ * repeat artists + sort by BPM proximity. Keeps the GetSongBPM/Last.fm keys
+ * off the phone (GetSongBPM was bundled client-side at first — a real leak
+ * risk on a public repo) and gives one place to evolve the engine without
+ * an app store update.
  *
  * traits is personality-optional: the client can send neutral {O:C:E:A:N:0.5}
  * to skip onboarding — seedTarget's formulas produce zero personality shift
@@ -21,7 +22,7 @@ import express from "express";
 import cors from "cors";
 import { seedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
-import { searchAcrossGenres, resetProvider } from "./engine/musicProvider.js";
+import { searchAcrossGenres } from "./engine/musicProvider.js";
 import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
 import { getSimilarArtists } from "./engine/lastfm.js";
 
@@ -44,9 +45,6 @@ app.get("/activities", (_req, res) => res.json(ACTIVITIES));
 app.post("/recommend", async (req, res) => {
   const diag = [];
   try {
-    // the Deezer/iTunes provider choice is sticky WITHIN this request (avoids
-    // re-probing on every genre term) but must not leak across requests/users
-    resetProvider();
     const {
       traits, activity, moodLabels = [], moodText = "", lat, lon,
       spotifyArtists = [], limit = 15,
@@ -99,15 +97,11 @@ app.post("/recommend", async (req, res) => {
     // from the "reserve" without a second network round trip. Searches every
     // term in seedPool (genres + your artists/genres), not just one random
     // pick — merges results, drops repeat artists, sorts by BPM proximity.
-    // +25 not +15: the pool now also survives Apple Music availability
-    // filtering (searchAcrossGenres drops any track with no verified match),
-    // which has real attrition on Deezer-sourced tracks — extra headroom
-    // keeps `tracks`/`reserve` from coming up short after that filter runs.
     const pool = await searchAcrossGenres({
       seedPool,
       bpmMin: target.bpmMin,
       bpmMax: target.bpmMax,
-      limit: limit + 25,
+      limit: limit + 15,
       onDiag: (m) => diag.push(m),
     });
 
