@@ -20,8 +20,8 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
   return (
     <View style={s.overlay}>
       <View style={s.header}>
-        <Pressable onPress={selected ? () => setSelected(null) : onClose}>
-          <Text style={s.headerBack}>{selected ? "← back" : "Close"}</Text>
+        <Pressable onPress={selected ? () => setSelected(null) : onClose} hitSlop={12}>
+          <Text style={s.headerBack}>{selected ? "← Back" : "Close"}</Text>
         </Pressable>
         <Text style={s.headerTitle}>{selected ? "PLAYLIST" : "PROFILE"}</Text>
         <View style={{ width: 50 }} />

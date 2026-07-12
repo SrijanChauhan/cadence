@@ -114,20 +114,22 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
 
 function Intro({ onStart, onSkip }) {
   return (
-    <View style={s.center}>
-      <Text style={s.kicker}>CADENCE</Text>
-      <BounceNumber value="2:00" style={s.mega} />
-      <Text style={s.megaLabel}>twenty prompts. two minutes.{"\n"}zero right answers.</Text>
-      <Text style={s.introBody}>
-        A quick read on how you're wired — it seeds your first playlists before we've heard a single skip.
-      </Text>
-      <Pressable style={s.voltBtn} onPress={onStart}>
-        <Text style={s.voltBtnText}>START</Text>
-      </Pressable>
-      <Text style={s.fineprint}>Mini-IPIP · validated Big Five short form</Text>
+    <View style={s.introRoot}>
+      <View style={s.center}>
+        <Text style={s.kicker}>CADENCE</Text>
+        <BounceNumber value="2:00" style={s.mega} />
+        <Text style={s.megaLabel}>twenty prompts. two minutes.{"\n"}zero right answers.</Text>
+        <Text style={s.introBody}>
+          A quick read on how you're wired — it seeds your first playlists before we've heard a single skip.
+        </Text>
+        <Pressable style={s.voltBtn} onPress={onStart}>
+          <Text style={s.voltBtnText}>START</Text>
+        </Pressable>
+        <Text style={s.fineprint}>Mini-IPIP · validated Big Five short form</Text>
+      </View>
       {onSkip && (
-        <Pressable style={s.skipBtn} onPress={onSkip}>
-          <Text style={s.skipBtnText}>skip {"—"} use mood, weather & time only</Text>
+        <Pressable style={s.skipBtn} onPress={onSkip} hitSlop={12}>
+          <Text style={s.skipBtnText}>Skip</Text>
         </Pressable>
       )}
     </View>
@@ -156,8 +158,8 @@ function Quiz({ idx, answers, onAnswer, onBack }) {
         })}
       </View>
 
-      <Pressable onPress={onBack} disabled={idx === 0} style={s.backBtn}>
-        <Text style={[s.back, idx === 0 && s.backDisabled]}>← back</Text>
+      <Pressable onPress={onBack} disabled={idx === 0} style={s.backBtn} hitSlop={12}>
+        <Text style={[s.back, idx === 0 && s.backDisabled]}>← Back</Text>
       </Pressable>
     </View>
   );
@@ -211,8 +213,8 @@ function Results({ data, onRestart, onComplete }) {
       )}
 
       <View style={s.rowSplit}>
-        <Pressable onPress={copy}><Text style={s.back}>{copied ? "copied" : "copy vector JSON"}</Text></Pressable>
-        <Pressable onPress={onRestart}><Text style={s.back}>retake</Text></Pressable>
+        <Pressable onPress={copy}><Text style={s.back}>{copied ? "Copied" : "Copy Vector JSON"}</Text></Pressable>
+        <Pressable onPress={onRestart}><Text style={s.back}>Retake</Text></Pressable>
       </View>
     </ScrollView>
   );
@@ -222,7 +224,11 @@ const rounded = Platform.select({ ios: "System", android: "sans-serif-black", de
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
-  center: { flex: 1, paddingHorizontal: 26, justifyContent: "center" },
+  // Intro's own column: the centered content block takes all remaining
+  // space (flex:1), which naturally pushes skipBtn as its sibling down to
+  // the true bottom of the page, rather than skip just trailing the content.
+  introRoot: { flex: 1, paddingHorizontal: 26, paddingBottom: 20 },
+  center: { flex: 1, justifyContent: "center" },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
 
   mega: { color: VOLT, fontSize: 108, fontWeight: "900", fontFamily: rounded, letterSpacing: -4, lineHeight: 112 },
@@ -232,8 +238,8 @@ const s = StyleSheet.create({
   voltBtn: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 18, alignItems: "center", marginTop: 10 },
   voltBtnText: { color: "#000", fontSize: 16, fontWeight: "900", letterSpacing: 2 },
   fineprint: { color: "#5A5A5A", fontSize: 11.5, textAlign: "center", marginTop: 16 },
-  skipBtn: { marginTop: 28, alignItems: "center" },
-  skipBtnText: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
+  skipBtn: { alignItems: "center", paddingVertical: 10 },
+  skipBtnText: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
 
   quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18 },
   counterRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },
@@ -246,7 +252,7 @@ const s = StyleSheet.create({
   optActive: { backgroundColor: VOLT, borderColor: VOLT },
   optLabel: { color: "#DADADA", fontSize: 15, fontWeight: "700" },
   optLabelActive: { color: "#000" },
-  backBtn: { marginTop: 22 },
+  backBtn: { marginTop: 22, alignSelf: "flex-start", paddingVertical: 8, paddingHorizontal: 4 },
   back: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
   backDisabled: { opacity: 0.3 },
 

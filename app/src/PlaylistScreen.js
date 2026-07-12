@@ -545,7 +545,7 @@ export default function PlaylistScreen({ traits }) {
             onSubmitEditing={Keyboard.dismiss}
           />
           <Pressable style={s.moodGo} onPress={confirmMood}><Text style={s.moodGoText}>BUILD MY PLAYLIST</Text></Pressable>
-          <Pressable onPress={skipMood}><Text style={s.moodSkip}>skip {"\u2014"} just use activity</Text></Pressable>
+          <Pressable onPress={skipMood} hitSlop={12}><Text style={s.moodSkip}>Skip {"\u2014"} Just Use Activity</Text></Pressable>
         </View>
       </Pressable>
     )}
