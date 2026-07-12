@@ -325,13 +325,18 @@ export default function PlaylistScreen({ traits }) {
       setSaveState("saving"); setSaveMsg("Building your Spotify playlist…");
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
 
-      // best-effort: a failed capture shouldn't block the save
+      // best-effort: a failed capture shouldn't block the save, but log why
+      // so a cover-art problem is debuggable instead of just silently absent
       let coverImageBase64 = null;
       try {
         if (bannerRef.current) {
           coverImageBase64 = await captureRef(bannerRef, { format: "jpg", quality: 0.6, result: "base64" });
+        } else {
+          console.warn("[cover art] bannerRef not attached — banner may not be mounted yet");
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[cover art] captureRef failed:", e.message);
+      }
 
       const name = playlistName();
       const story = playlistStory();

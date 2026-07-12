@@ -28,6 +28,13 @@ const REDIRECT_URI = "cadence://spotify-auth";
 // session-banner art as the playlist's custom cover image.
 const SCOPES = "playlist-modify-private playlist-modify-public user-top-read ugc-image-upload";
 const TOKEN_KEY = "cadence:spotify:refreshToken";
+// A refresh token only ever mints access tokens with whatever scopes were
+// granted at the ORIGINAL /authorize consent — refreshing never upgrades
+// them. Without this, a token saved before a scope was added to SCOPES
+// would keep silently auto-reconnecting via restoreSpotifySession()
+// forever, with no signal that a fresh consent (a real connectSpotify()
+// call, not a refresh) is actually needed for the new permission to exist.
+const SCOPES_KEY = "cadence:spotify:grantedScopes";
 
 let accessToken = null;
 let refreshToken = null;
@@ -42,12 +49,17 @@ export function hasSpotifyAuth() {
 /**
  * Try to silently resume a previous Spotify session using a persisted
  * refresh token, so the user isn't asked to reconnect every app launch.
- * Returns true if it worked. Safe to call even with no saved token.
+ * Returns false (forcing a real reconnect) if the stored session was
+ * granted under a different/older scope set than SCOPES currently is.
  */
 export async function restoreSpotifySession() {
   try {
-    const saved = await AsyncStorage.getItem(TOKEN_KEY);
+    const [saved, grantedScopes] = await Promise.all([
+      AsyncStorage.getItem(TOKEN_KEY),
+      AsyncStorage.getItem(SCOPES_KEY),
+    ]);
     if (!saved) return false;
+    if (grantedScopes !== SCOPES) return false; // stale scope grant — needs a real reconnect
     refreshToken = saved;
     tokenExpiry = 0; // force refreshIfNeeded() to actually refresh
     await refreshIfNeeded();
@@ -118,7 +130,12 @@ export async function exchangeCode(code) {
   accessToken = json.access_token;
   refreshToken = json.refresh_token;
   tokenExpiry = Date.now() + (json.expires_in - 60) * 1000;
-  if (refreshToken) AsyncStorage.setItem(TOKEN_KEY, refreshToken).catch(() => {});
+  if (refreshToken) {
+    AsyncStorage.setItem(TOKEN_KEY, refreshToken).catch(() => {});
+    // record which scopes THIS consent actually granted, so a future scope
+    // addition can tell a stale silent-refresh session apart from a fresh one
+    AsyncStorage.setItem(SCOPES_KEY, SCOPES).catch(() => {});
+  }
 }
 
 async function refreshIfNeeded() {
@@ -220,7 +237,16 @@ async function uploadPlaylistCoverImage(playlistId, base64Jpeg) {
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "image/jpeg" },
     body: base64Jpeg,
   });
-  if (!res.ok) throw new Error(`Cover image upload failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    // 403 here is almost always ugc-image-upload missing from the CURRENT
+    // access token — that scope only applies to connections made after it
+    // was added to SCOPES; a session that silently refreshed via a stored
+    // refresh token never re-prompts for new scopes, so this can keep
+    // failing indefinitely until the user explicitly reconnects.
+    const body = await res.text().catch(() => "");
+    const hint = res.status === 403 ? " (likely missing ugc-image-upload scope — reconnect Spotify)" : "";
+    throw new Error(`Cover image upload failed: HTTP ${res.status}${hint} ${body.slice(0, 150)}`);
+  }
 }
 
 /**
@@ -260,9 +286,11 @@ export async function createPlaylistFromTracks(tracks, { name = "Cadence Session
     try {
       await uploadPlaylistCoverImage(playlist.id, coverImageBase64);
       coverUploaded = true;
-    } catch {
+    } catch (e) {
       // missing ugc-image-upload scope on an older connection, oversized
-      // image, transient failure — playlist itself is already saved either way
+      // image, transient failure — playlist itself is already saved either
+      // way, but log the reason instead of discarding it entirely
+      console.warn("[cover art] upload failed:", e.message);
     }
   }
 
