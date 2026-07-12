@@ -24,8 +24,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const CLIENT_ID = "5cb328659de34b61bf3a437fd42e20c0";
 const REDIRECT_URI = "cadence://spotify-auth";
 // user-top-read powers the "blend in artists you actually listen to" search —
-// see getTopArtists(). Everything else is playlist-write, unchanged.
-const SCOPES = "playlist-modify-private playlist-modify-public user-top-read";
+// see getTopArtists(). ugc-image-upload lets createPlaylistFromTracks set the
+// session-banner art as the playlist's custom cover image.
+const SCOPES = "playlist-modify-private playlist-modify-public user-top-read ugc-image-upload";
 const TOKEN_KEY = "cadence:spotify:refreshToken";
 
 let accessToken = null;
@@ -205,10 +206,32 @@ async function findTrackUri(track) {
 }
 
 /**
- * Create a playlist in the user's Spotify library from Cadence tracks.
- * Returns { url, matchedCount, totalCount }.
+ * Set a playlist's custom cover image. Spotify's rules here are unusual vs
+ * every other endpoint in this file: raw base64 JPEG text as the body (not
+ * JSON), image/jpeg content type, max 256KB payload, 202 on success with no
+ * body. Best-effort — failures (oversized image, scope not granted on an
+ * older connection, etc.) are swallowed by the caller so a cover-art problem
+ * never blocks the playlist itself from being created.
  */
-export async function createPlaylistFromTracks(tracks, { name = "Cadence Session", description = "" } = {}) {
+async function uploadPlaylistCoverImage(playlistId, base64Jpeg) {
+  await refreshIfNeeded();
+  const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/images`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "image/jpeg" },
+    body: base64Jpeg,
+  });
+  if (!res.ok) throw new Error(`Cover image upload failed: HTTP ${res.status}`);
+}
+
+/**
+ * Create a playlist in the user's Spotify library from Cadence tracks.
+ * @param {string} [opts.coverImageBase64] base64 JPEG (no data: prefix),
+ *   e.g. from react-native-view-shot's captureRef — set as the playlist's
+ *   cover so it visually matches the in-app session banner. Optional; a
+ *   failed/omitted upload doesn't affect the rest of the save.
+ * Returns { url, matchedCount, totalCount, coverUploaded }.
+ */
+export async function createPlaylistFromTracks(tracks, { name = "Cadence Session", description = "", coverImageBase64 = null } = {}) {
   if (!hasSpotifyAuth()) throw new Error("Not connected to Spotify — connect first.");
   // match tracks -> spotify URIs
   const uris = [];
@@ -232,9 +255,21 @@ export async function createPlaylistFromTracks(tracks, { name = "Cadence Session
     body: JSON.stringify({ uris }),
   });
 
+  let coverUploaded = false;
+  if (coverImageBase64) {
+    try {
+      await uploadPlaylistCoverImage(playlist.id, coverImageBase64);
+      coverUploaded = true;
+    } catch {
+      // missing ugc-image-upload scope on an older connection, oversized
+      // image, transient failure — playlist itself is already saved either way
+    }
+  }
+
   return {
     url: playlist.external_urls?.spotify || null,
     matchedCount: uris.length,
     totalCount: tracks.length,
+    coverUploaded,
   };
 }

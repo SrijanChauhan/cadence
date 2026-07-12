@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import FrontPage from "./src/FrontPage";
 import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
+import ProfileScreen from "./src/ProfileScreen";
 
 const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
 const FRONT_PAGE_MIN_MS = 1800; // brand moment on every launch, not just first run
@@ -13,6 +14,7 @@ export default function App() {
   const [traits, setTraits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   // on launch, restore a saved personality profile if one exists
   useEffect(() => {
@@ -41,6 +43,7 @@ export default function App() {
 
   const recalibrate = async () => {
     setTraits(null);
+    setProfileOpen(false);
     try { await AsyncStorage.removeItem(PROFILE_KEY); } catch {}
   };
 
@@ -60,11 +63,17 @@ export default function App() {
         <View style={{ flex: 1 }}>
           <View style={styles.top}>
             <Text style={styles.wordmark}>CADENCE</Text>
-            <Pressable onPress={recalibrate}>
-              <Text style={styles.retake}>recalibrate</Text>
+            <Pressable onPress={() => setProfileOpen(true)}>
+              <Text style={styles.profileLink}>Profile</Text>
             </Pressable>
           </View>
           <PlaylistScreen traits={traits} />
+          <ProfileScreen
+            visible={profileOpen}
+            traits={traits}
+            onClose={() => setProfileOpen(false)}
+            onRecalibrate={recalibrate}
+          />
         </View>
       ) : (
         <OnboardingScreen onComplete={saveProfile} onSkip={skipPersonality} />
@@ -77,5 +86,5 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#000" },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", paddingHorizontal: 24, paddingTop: 14, paddingBottom: 12 },
   wordmark: { color: "#FFF", fontWeight: "900", letterSpacing: 5, fontSize: 14 },
-  retake: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
+  profileLink: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
 });

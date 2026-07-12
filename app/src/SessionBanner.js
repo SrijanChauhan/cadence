@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from "react";
+import React, { forwardRef, useMemo, useRef, useEffect } from "react";
 import { View, Text, StyleSheet, Animated, Platform } from "react-native";
 
 /**
@@ -126,7 +126,12 @@ function BlobLayer({ valence, arousal, condition, localHour, seedKey }) {
   );
 }
 
-export default function SessionBanner({ mood, weather, activityLabel, place }) {
+/**
+ * Forwards a ref to the outer container so PlaylistScreen can capture it
+ * with react-native-view-shot's captureRef and upload it as the Spotify
+ * playlist's cover image — the cover then visually matches this banner.
+ */
+const SessionBanner = forwardRef(function SessionBanner({ mood, weather, activityLabel, place }, ref) {
   const fade = useRef(new Animated.Value(0)).current;
   const seedKey = `${mood?.label || "Neutral"}|${weather?.condition || ""}|${activityLabel || ""}`;
 
@@ -143,7 +148,7 @@ export default function SessionBanner({ mood, weather, activityLabel, place }) {
   const baseColor = moodColor(mood?.valence ?? 0, mood?.arousal ?? 0);
 
   return (
-    <Animated.View style={[s.root, { opacity: fade }]}>
+    <Animated.View ref={ref} style={[s.root, { opacity: fade }]}>
       <View style={[s.art, { backgroundColor: baseColor }]}>
         <BlobLayer
           valence={mood?.valence ?? 0}
@@ -162,7 +167,9 @@ export default function SessionBanner({ mood, weather, activityLabel, place }) {
       </View>
     </Animated.View>
   );
-}
+});
+
+export default SessionBanner;
 
 const s = StyleSheet.create({
   root: { height: 210, borderRadius: 20, overflow: "hidden", borderWidth: 1, borderColor: "#242424", marginBottom: 18 },

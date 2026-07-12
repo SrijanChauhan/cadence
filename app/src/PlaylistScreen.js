@@ -5,8 +5,10 @@ import {
 import { Audio } from "expo-av";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { captureRef } from "react-native-view-shot";
 import { BACKEND_URL } from "./config";
 import SessionBanner from "./SessionBanner";
+import { addToPlaylistHistory } from "./playlistHistory";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
@@ -59,6 +61,7 @@ export default function PlaylistScreen({ traits }) {
   const playStart = useRef(null);
   const queueRef = useRef([]);
   const tracksRef = useRef([]);
+  const bannerRef = useRef(null);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
 
@@ -321,12 +324,33 @@ export default function PlaylistScreen({ traits }) {
       }
       setSaveState("saving"); setSaveMsg("Building your Spotify playlist…");
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
-      const { matchedCount, totalCount } = await createPlaylistFromTracks(list, {
-        name: playlistName(),
-        description: playlistStory(),
+
+      // best-effort: a failed capture shouldn't block the save
+      let coverImageBase64 = null;
+      try {
+        if (bannerRef.current) {
+          coverImageBase64 = await captureRef(bannerRef, { format: "jpg", quality: 0.6, result: "base64" });
+        }
+      } catch {}
+
+      const name = playlistName();
+      const story = playlistStory();
+      const { matchedCount, totalCount, url, coverUploaded } = await createPlaylistFromTracks(list, {
+        name, description: story, coverImageBase64,
       });
+
+      addToPlaylistHistory({
+        name, story,
+        activityLabel: ACTIVITIES.find((a) => a.key === activity)?.label,
+        mood, weather, place,
+        tracks: list,
+        spotifyUrl: url,
+      });
+
       setSaveState("done");
-      setSaveMsg(`Saved ${matchedCount}/${totalCount} tracks to Spotify. Open Spotify → Library.`);
+      setSaveMsg(
+        `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
+      );
     } catch (e) {
       setSaveState("error"); setSaveMsg(e.message || "Couldn't save to Spotify.");
     }
@@ -363,6 +387,7 @@ export default function PlaylistScreen({ traits }) {
 
       {target && (
         <SessionBanner
+          ref={bannerRef}
           mood={mood}
           weather={weather}
           activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
@@ -374,8 +399,7 @@ export default function PlaylistScreen({ traits }) {
         <View style={s.targetRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
-            <Text style={s.targetUnit}>BPM · tuned to you</Text>
-            {target.explain.map((e, i) => (<Text key={i} style={s.explain}>• {e}</Text>))}
+            <Text style={s.targetUnit}>BPM · Tuned to You</Text>
           </View>
           {post && (
             <View style={s.lambdaBox}>
@@ -449,11 +473,11 @@ export default function PlaylistScreen({ traits }) {
       <View style={s.queuePanel}>
         <View style={s.queueHead}>
           <Text style={s.queueTitle}>QUEUE {'\u00b7'} {queueTracks.length}</Text>
-          <Pressable onPress={() => setQueueOpen(false)}><Text style={s.queueClose}>close</Text></Pressable>
+          <Pressable onPress={() => setQueueOpen(false)}><Text style={s.queueClose}>Close</Text></Pressable>
         </View>
         <Pressable style={s.spotifyBtn} onPress={saveToSpotify} disabled={saveState === "saving" || saveState === "connecting"}>
           <Text style={s.spotifyBtnText}>
-            {saveState === "saving" ? "SAVING\u2026" : saveState === "connecting" ? "CONNECTING\u2026" : "SAVE QUEUE TO SPOTIFY"}
+            {saveState === "saving" ? "SAVING\u2026" : saveState === "connecting" ? "CONNECTING\u2026" : (queueTracks.length === 1 ? "ADD TO SPOTIFY" : "SAVE QUEUE TO SPOTIFY")}
           </Text>
         </Pressable>
         {saveMsg ? <Text style={[s.saveMsg, saveState === "error" && s.saveMsgError]}>{saveMsg}</Text> : null}
