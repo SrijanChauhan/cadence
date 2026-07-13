@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking, Modal } from "react-native";
 import { Audio } from "expo-av";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
-
-const VOLT = "#D6FF3D";
+import { THEMES, useTheme } from "./theme";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
+  const { theme, themeId, setTheme } = useTheme();
   const [history, setHistory] = useState(null); // null = loading
   const [selected, setSelected] = useState(null); // a history record, or null for list view
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -19,7 +20,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
   if (!visible) return null;
 
   return (
-    <View style={s.overlay}>
+    <View style={[s.overlay, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
         <Pressable onPress={selected ? () => setSelected(null) : onClose} hitSlop={12} style={s.headerBackBtn}>
           <Text style={s.headerBack}>{selected ? "← Back" : "Close"}</Text>
@@ -39,13 +40,18 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
       ) : (
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
           <PersonalityPlacard traits={traits} />
-          <Pressable style={s.recalBtn} onPress={onRecalibrate}>
-            <Text style={s.recalBtnText}>Recalibrate</Text>
-          </Pressable>
+          <View style={s.actionRow}>
+            <Pressable style={s.recalBtn} onPress={onRecalibrate}>
+              <Text style={s.recalBtnText}>Test Again</Text>
+            </Pressable>
+            <Pressable style={s.recalBtn} onPress={() => setThemePickerOpen(true)}>
+              <Text style={s.recalBtnText}>Theme</Text>
+            </Pressable>
+          </View>
 
           <Text style={[s.kicker, { marginTop: 32 }]}>YOUR PLAYLISTS</Text>
           {history === null ? (
-            <ActivityIndicator color={VOLT} style={{ marginTop: 16 }} />
+            <ActivityIndicator color={theme.accent} style={{ marginTop: 16 }} />
           ) : history.length === 0 ? (
             <Text style={s.empty}>Nothing saved yet — build a playlist and save it to Spotify to see it here.</Text>
           ) : (
@@ -65,11 +71,34 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           )}
         </ScrollView>
       )}
+
+      <Modal transparent visible={themePickerOpen} animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
+        <Pressable style={s.themeBackdrop} onPress={() => setThemePickerOpen(false)}>
+          <Pressable style={[s.themeCard, { backgroundColor: theme.surface, borderColor: theme.accent }]} onPress={() => {}}>
+            <Text style={s.themeCardTitle}>THEME</Text>
+            {Object.values(THEMES).map((t) => (
+              <Pressable
+                key={t.id}
+                style={[s.themeRow, t.id === themeId && { borderColor: t.accent }]}
+                onPress={() => { setTheme(t.id); setThemePickerOpen(false); }}
+              >
+                <View style={s.themeSwatches}>
+                  <View style={[s.themeSwatch, { backgroundColor: t.accent }]} />
+                  <View style={[s.themeSwatch, { backgroundColor: t.accent2 }]} />
+                </View>
+                <Text style={s.themeRowLabel}>{t.name}</Text>
+                {t.id === themeId && <Text style={[s.themeRowCheck, { color: t.accent }]}>✓</Text>}
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 function PlaylistDetail({ record }) {
+  const { theme } = useTheme();
   const [playingId, setPlayingId] = useState(null);
   const [playError, setPlayError] = useState(null);
   const sound = useRef(null);
@@ -101,7 +130,7 @@ function PlaylistDetail({ record }) {
       <Text style={s.detailStory}>{record.story}</Text>
       {record.spotifyUrl && (
         <Pressable onPress={() => Linking.openURL(record.spotifyUrl)}>
-          <Text style={s.detailLink}>Open in Spotify →</Text>
+          <Text style={[s.detailLink, { color: theme.accent }]}>Open in Spotify →</Text>
         </Pressable>
       )}
 
@@ -115,7 +144,7 @@ function PlaylistDetail({ record }) {
             <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
           </View>
           <Pressable style={s.trackPlayBtn} onPress={() => play(t)} hitSlop={8}>
-            <Text style={[s.trackPlayIcon, playingId === t.id && s.trackPlayIconActive]}>
+            <Text style={[s.trackPlayIcon, playingId === t.id && { color: theme.accent }]}>
               {playingId === t.id ? "❚❚" : "▶"}
             </Text>
           </Pressable>
@@ -137,8 +166,18 @@ const s = StyleSheet.create({
 
   body: { paddingHorizontal: 22, paddingBottom: 60 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
+  actionRow: { flexDirection: "row", gap: 10 },
   recalBtn: { alignSelf: "flex-start", borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 10, paddingHorizontal: 20 },
   recalBtnText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
+
+  themeBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", paddingHorizontal: 30 },
+  themeCard: { width: "100%", borderRadius: 22, borderWidth: 1, padding: 18 },
+  themeCardTitle: { color: "#8A8A8A", fontSize: 11, letterSpacing: 3, fontWeight: "800", marginBottom: 14 },
+  themeRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1.5, borderColor: "transparent", marginBottom: 6 },
+  themeSwatches: { flexDirection: "row" },
+  themeSwatch: { width: 20, height: 20, borderRadius: 10, marginRight: -6, borderWidth: 2, borderColor: "#000" },
+  themeRowLabel: { color: "#EDEDED", fontSize: 14.5, fontWeight: "700", flex: 1, marginLeft: 6 },
+  themeRowCheck: { fontSize: 16, fontWeight: "900" },
 
   empty: { color: "#6E6E6E", fontSize: 13, lineHeight: 19, marginTop: 4 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderColor: "#161616" },
@@ -148,7 +187,7 @@ const s = StyleSheet.create({
 
   detailName: { color: "#FFF", fontSize: 20, fontWeight: "900", marginBottom: 10 },
   detailStory: { color: "#B5B5B5", fontSize: 13.5, lineHeight: 20, marginBottom: 10 },
-  detailLink: { color: VOLT, fontSize: 13, fontWeight: "800" },
+  detailLink: { fontSize: 13, fontWeight: "800" },
 
   trackRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderColor: "#141414" },
   trackCover: { width: 42, height: 42, borderRadius: 10 },
@@ -157,6 +196,5 @@ const s = StyleSheet.create({
   trackArtist: { color: "#7A7A7A", fontSize: 11.5, marginTop: 1 },
   trackPlayBtn: { padding: 8 },
   trackPlayIcon: { color: "#7A7A7A", fontSize: 15, fontWeight: "800" },
-  trackPlayIconActive: { color: VOLT },
   playError: { color: "#FF5A4E", fontSize: 12.5, fontWeight: "600", lineHeight: 18, marginBottom: 10 },
 });

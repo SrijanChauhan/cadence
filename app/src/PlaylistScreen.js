@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput, Keyboard,
 } from "react-native";
@@ -14,6 +14,7 @@ import { addToPlaylistHistory } from "./playlistHistory";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
+import { useTheme } from "./theme";
 
 /**
  * Cadence — Playlist screen
@@ -31,8 +32,6 @@ import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/ba
  *  - Spotify OAuth + playlist save — needs a real browser/redirect on-device.
  */
 
-const VOLT = "#D6FF3D";
-
 const MOOD_BUBBLES = ["Energetic", "Happy", "Content", "Calm", "Mellow", "Drained", "Down", "Tense"];
 
 function BounceNumber({ value, style }) {
@@ -45,6 +44,8 @@ function BounceNumber({ value, style }) {
 }
 
 export default function PlaylistScreen({ traits }) {
+  const { theme } = useTheme();
+  const s = useMemo(() => buildStyles(theme.accent, theme.bg), [theme]);
   const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -535,7 +536,7 @@ export default function PlaylistScreen({ traits }) {
 
       {loading && (
         <View style={{ marginTop: 26, alignItems: "center" }}>
-          <ActivityIndicator color={VOLT} />
+          <ActivityIndicator color={theme.accent} />
           <Text style={s.loadingNote}>tuning to you…</Text>
         </View>
       )}
@@ -589,7 +590,7 @@ export default function PlaylistScreen({ traits }) {
           disabled={loading || refreshCount >= MAX_REFRESHES}
         >
           <Text style={s.refreshBtnText}>
-            {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : `REFRESH PLAYLIST (${MAX_REFRESHES - refreshCount} LEFT)`}
+            {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : "REFRESH PLAYLIST"}
           </Text>
         </Pressable>
       )}
@@ -679,8 +680,12 @@ export default function PlaylistScreen({ traits }) {
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000", paddingHorizontal: 22, paddingTop: 4 },
+// Built as a function of the theme's accent/background rather than a static
+// module-level StyleSheet, so switching themes (see ProfileScreen's Theme
+// picker) restyles every screen without touching any of the JSX below —
+// `s` is computed once per theme change via useMemo inside the component.
+const buildStyles = (VOLT, BG) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: BG, paddingHorizontal: 22, paddingTop: 4 },
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: "#0A0A0A", borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
@@ -754,3 +759,4 @@ const s = StyleSheet.create({
   moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
   moodSkip: { color: "#7A7A7A", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
 });
+

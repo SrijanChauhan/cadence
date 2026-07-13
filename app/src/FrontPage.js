@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from "react";
 import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { useTheme } from "./theme";
 
 /**
  * Cadence — front page / title card.
@@ -13,9 +14,8 @@ import { View, Text, StyleSheet, Animated, Platform } from "react-native";
 const HELVETICA = Platform.select({ ios: "Helvetica", android: "sans-serif", default: "Helvetica" });
 const HELVETICA_BOLD = Platform.select({ ios: "Helvetica-Bold", android: "sans-serif", default: "Helvetica-Bold" });
 
-const VOLT = "#D6FF3D";
-
 export default function FrontPage() {
+  const { theme } = useTheme();
   const wordmarkScale = useRef(new Animated.Value(0.6)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
   const taglineY = useRef(new Animated.Value(10)).current;
@@ -27,8 +27,8 @@ export default function FrontPage() {
   }, []);
 
   return (
-    <View style={s.root}>
-      <Animated.Text style={[s.wordmark, { transform: [{ scale: wordmarkScale }] }]}>
+    <View style={[s.root, { backgroundColor: theme.bg }]}>
+      <Animated.Text style={[s.wordmark, { color: theme.accent, transform: [{ scale: wordmarkScale }] }]}>
         CADENCE
       </Animated.Text>
       <Animated.Text style={[s.tagline, { opacity: taglineOpacity, transform: [{ translateY: taglineY }] }]}>
@@ -40,6 +40,6 @@ export default function FrontPage() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000", justifyContent: "center", alignItems: "center", paddingHorizontal: 30 },
-  wordmark: { color: VOLT, fontSize: 46, fontWeight: "900", fontFamily: HELVETICA_BOLD, letterSpacing: 6 },
+  wordmark: { fontSize: 46, fontWeight: "900", fontFamily: HELVETICA_BOLD, letterSpacing: 6 },
   tagline: { color: "#EDEDED", fontSize: 16, fontFamily: HELVETICA, fontWeight: "600", marginTop: 12, letterSpacing: 0.5 },
 });

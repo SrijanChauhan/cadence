@@ -1,16 +1,17 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Animated, Easing, Platform,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { useTheme } from "./theme";
 
 /**
  * Cadence — Onboarding (Bounce edition)
  * Visual language: black / volt / huge rounded 900-weight numerals /
- * spring-bounce on the numbers. Assessment logic unchanged (Mini-IPIP).
+ * spring-bounce on the numbers. Scoring logic is Mini-IPIP's, but each test
+ * taker only sees 10 of its 20 items (see pickQuizItems) — one regular and
+ * one reverse-scored item per trait, randomly chosen and randomly ordered.
  */
-
-const VOLT = "#D6FF3D";
 
 const TRAITS = [
   { key: "O", name: "Openness", sub: "imagination · variety" },
@@ -43,6 +44,30 @@ const ITEMS = [
   { t: "I do not have a good imagination.", trait: "O", rev: true },
 ];
 
+function shuffle(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+// Randomized per test-taker: for each trait, pick one random regular item and
+// one random reverse-scored item (there are 2 of each per trait in ITEMS, so
+// which pair gets used varies test to test, not just their order), then
+// shuffle the resulting 10 across traits so the trait order isn't fixed either.
+function pickQuizItems() {
+  const traits = ["O", "C", "E", "A", "N"];
+  const picked = traits.flatMap((trait) => {
+    const forTrait = ITEMS.filter((it) => it.trait === trait);
+    const regular = shuffle(forTrait.filter((it) => !it.rev))[0];
+    const reverse = shuffle(forTrait.filter((it) => it.rev))[0];
+    return [regular, reverse];
+  });
+  return shuffle(picked);
+}
+
 const LIKERT = [
   { v: 1, label: "Strongly disagree" },
   { v: 2, label: "Disagree" },
@@ -74,23 +99,39 @@ function BounceNumber({ value, style }) {
 }
 
 export default function OnboardingScreen({ onComplete, onSkip }) {
+  const { theme } = useTheme();
+  const s = useMemo(() => buildStyles(theme.accent, theme.bg), [theme]);
   const [screen, setScreen] = useState("intro");
   const [idx, setIdx] = useState(0);
-  const [answers, setAnswers] = useState(Array(ITEMS.length).fill(null));
+  const [quizItems, setQuizItems] = useState(pickQuizItems);
+  const [answers, setAnswers] = useState(Array(quizItems.length).fill(null));
+  // tracks the pending auto-advance timeout so Back can cancel it — without
+  // this, tapping Back right after answering got silently overridden a
+  // moment later when the stale timeout fired and forced idx forward again
+  const advanceTimeout = useRef(null);
+
+  useEffect(() => () => clearTimeout(advanceTimeout.current), []);
 
   const answer = (v) => {
     const next = [...answers];
     next[idx] = v;
     setAnswers(next);
-    setTimeout(() => {
-      if (idx < ITEMS.length - 1) setIdx(idx + 1);
+    clearTimeout(advanceTimeout.current);
+    const atIdx = idx;
+    advanceTimeout.current = setTimeout(() => {
+      if (atIdx < quizItems.length - 1) setIdx(atIdx + 1);
       else setScreen("results");
     }, 150);
   };
 
+  const back = () => {
+    clearTimeout(advanceTimeout.current);
+    setIdx((i) => Math.max(0, i - 1));
+  };
+
   const scores = () => {
     const sums = { O: 0, C: 0, E: 0, A: 0, N: 0 };
-    ITEMS.forEach((it, i) => {
+    quizItems.forEach((it, i) => {
       const r = answers[i] ?? 3;
       sums[it.trait] += it.rev ? 6 - r : r;
     });
@@ -99,33 +140,40 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
     return out;
   };
 
-  const restart = () => { setAnswers(Array(ITEMS.length).fill(null)); setIdx(0); setScreen("intro"); };
+  const restart = () => {
+    clearTimeout(advanceTimeout.current);
+    const fresh = pickQuizItems();
+    setQuizItems(fresh);
+    setAnswers(Array(fresh.length).fill(null));
+    setIdx(0);
+    setScreen("intro");
+  };
 
   return (
     <View style={s.root}>
-      {screen === "intro" && <Intro onStart={() => setScreen("quiz")} onSkip={onSkip} />}
+      {screen === "intro" && <Intro s={s} onStart={() => setScreen("quiz")} onSkip={onSkip} />}
       {screen === "quiz" && (
-        <Quiz idx={idx} answers={answers} onAnswer={answer} onBack={() => idx > 0 && setIdx(idx - 1)} />
+        <Quiz s={s} idx={idx} items={quizItems} answers={answers} onAnswer={answer} onBack={back} />
       )}
-      {screen === "results" && <Results data={scores()} onRestart={restart} onComplete={onComplete} />}
+      {screen === "results" && <Results s={s} data={scores()} onRestart={restart} onComplete={onComplete} />}
     </View>
   );
 }
 
-function Intro({ onStart, onSkip }) {
+function Intro({ s, onStart, onSkip }) {
   return (
     <View style={s.introRoot}>
       <View style={s.center}>
         <Text style={s.kicker}>CADENCE</Text>
-        <BounceNumber value="2:00" style={s.mega} />
-        <Text style={s.megaLabel}>twenty prompts. two minutes.{"\n"}zero right answers.</Text>
+        <BounceNumber value="1:00" style={s.mega} />
+        <Text style={s.megaLabel}>ten prompts. one minute.{"\n"}zero right answers.</Text>
         <Text style={s.introBody}>
           A quick read on how you're wired — it seeds your first playlists before we've heard a single skip.
         </Text>
         <Pressable style={s.voltBtn} onPress={onStart}>
           <Text style={s.voltBtnText}>START</Text>
         </Pressable>
-        <Text style={s.fineprint}>Mini-IPIP · validated Big Five short form</Text>
+        <Text style={s.fineprint}>Big Five short form · randomized each time</Text>
       </View>
       {onSkip && (
         <Pressable style={s.skipBtn} onPress={onSkip} hitSlop={12}>
@@ -136,13 +184,13 @@ function Intro({ onStart, onSkip }) {
   );
 }
 
-function Quiz({ idx, answers, onAnswer, onBack }) {
-  const item = ITEMS[idx];
+function Quiz({ s, idx, items, answers, onAnswer, onBack }) {
+  const item = items[idx];
   return (
     <View style={s.quizWrap}>
       <View style={s.counterRow}>
         <BounceNumber value={String(idx + 1).padStart(2, "0")} style={s.counter} />
-        <Text style={s.counterTotal}>/ 20</Text>
+        <Text style={s.counterTotal}>/ {items.length}</Text>
       </View>
 
       <Text style={s.prompt}>{item.t}</Text>
@@ -165,7 +213,7 @@ function Quiz({ idx, answers, onAnswer, onBack }) {
   );
 }
 
-function Results({ data, onRestart, onComplete }) {
+function Results({ s, data, onRestart, onComplete }) {
   const anims = useRef(TRAITS.map(() => new Animated.Value(0))).current;
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -222,8 +270,8 @@ function Results({ data, onRestart, onComplete }) {
 
 const rounded = Platform.select({ ios: "System", android: "sans-serif-black", default: "System" });
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" },
+const buildStyles = (VOLT, BG) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: BG },
   // Intro's own column: the centered content block takes all remaining
   // space (flex:1), which naturally pushes skipBtn as its sibling down to
   // the true bottom of the page, rather than skip just trailing the content.

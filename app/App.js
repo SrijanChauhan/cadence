@@ -7,11 +7,23 @@ import FrontPage from "./src/FrontPage";
 import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
 import ProfileScreen from "./src/ProfileScreen";
+import { ThemeProvider, useTheme } from "./src/theme";
 
 const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
 const FRONT_PAGE_MIN_MS = 1800; // brand moment on every launch, not just first run
 
 export default function App() {
+  // ThemeProvider has to be above the component that calls useTheme() —
+  // AppInner is that component, App itself stays theme-agnostic.
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  );
+}
+
+function AppInner() {
+  const { theme } = useTheme();
   const [traits, setTraits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
@@ -54,7 +66,7 @@ export default function App() {
       // that uses gestures) - it's required infrastructure for gesture-handler
       // to work at all, per its own setup docs, not something scoped per-screen
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <SafeAreaView style={styles.safe}>
+        <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
           <StatusBar style="light" />
           <FrontPage />
         </SafeAreaView>
@@ -64,12 +76,12 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style="light" />
         {traits ? (
           <View style={{ flex: 1 }}>
             <View style={styles.top}>
-              <Text style={styles.wordmark}>CADENCE</Text>
+              <Text style={[styles.wordmark, { color: theme.accent }]}>CADENCE</Text>
               <Pressable onPress={() => setProfileOpen(true)}>
                 <Text style={styles.profileLink}>Profile</Text>
               </Pressable>

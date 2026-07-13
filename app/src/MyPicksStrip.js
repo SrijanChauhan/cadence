@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { View, Text, Image, StyleSheet, Pressable, ScrollView, Modal, Animated } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useTheme } from "./theme";
 
 /**
  * Cadence — My Picks strip with tap / hold-to-remove / hold-and-drag-to-reorder.
@@ -35,7 +36,6 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
  * patterns, but the exact hold-duration/movement-threshold feel is worth
  * checking on-device and adjusting LONG_PRESS_MS / MOVE_THRESHOLD if needed.
  */
-const VOLT = "#D6FF3D";
 const TILE_WIDTH = 84;
 const TILE_GAP = 10;
 const TILE_STRIDE = TILE_WIDTH + TILE_GAP;
@@ -91,6 +91,7 @@ function PickTile({ track, index, total, onOpenApple, onReorder, onHoldStill }) 
 }
 
 export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }) {
+  const { theme } = useTheme();
   // { id, x, y, width } of the tile currently showing the remove X, or null
   const [confirm, setConfirm] = useState(null);
 
@@ -100,7 +101,7 @@ export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }
 
   return (
     <View style={s.wrap}>
-      <Text style={s.title}>MY PICKS · {picks.length}</Text>
+      <Text style={[s.title, { color: theme.accent }]}>MY PICKS · {picks.length}</Text>
       <Text style={s.hint}>tap to open · hold to remove · hold + drag to reorder</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {picks.map((t, i) => (
@@ -135,7 +136,7 @@ export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }
 
 const s = StyleSheet.create({
   wrap: { marginBottom: 14 },
-  title: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 4 },
+  title: { fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 4 },
   hint: { color: "#5A5A5A", fontSize: 10, marginBottom: 8 },
 
   pick: { width: TILE_WIDTH, marginRight: TILE_GAP },
