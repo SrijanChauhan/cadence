@@ -173,7 +173,7 @@ export default function PlaylistScreen({ traits }) {
     }
   };
 
-  const load = async (act, moodInput) => {
+  const load = async (act, moodInput, excludeIds = []) => {
     setActivity(act); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]); setQueue([]);
     const pushDiag = (m) => setDiag((d) => [...d, m]);
     try {
@@ -188,6 +188,7 @@ export default function PlaylistScreen({ traits }) {
         moodText: moodInput ? moodInput.text : "",
         lat: loc?.lat, lon: loc?.lon,
         spotifyArtists, spotifyGenres,
+        excludeIds,
         limit: 15,
       };
       const res = await fetch(`${BACKEND_URL}/recommend`, {
@@ -229,6 +230,15 @@ export default function PlaylistScreen({ traits }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // iTunes's search ranking is deterministic, so a plain re-load for the same
+  // activity would hand back the same tracks — excludeIds tells the backend
+  // which ones we have already seen (current tracks + reserve) so it can
+  // fetch a bigger pool and surface genuinely different ones instead.
+  const refreshPlaylist = () => {
+    const excludeIds = [...tracks.map((t) => t.id), ...reserve.map((t) => t.id)];
+    load(activity, undefined, excludeIds);
   };
 
   const play = async (track) => {
@@ -550,7 +560,7 @@ export default function PlaylistScreen({ traits }) {
         // Re-fetches this activity's pool from scratch. Deliberately does NOT
         // touch myPicks — that store is fully decoupled from `tracks`/`feedback`
         // (see like()/addToMyPicks), so a refresh has nothing to reset there.
-        <Pressable style={s.refreshBtn} onPress={() => load(activity)} disabled={loading}>
+        <Pressable style={s.refreshBtn} onPress={refreshPlaylist} disabled={loading}>
           <Text style={s.refreshBtnText}>{loading ? "REFRESHING…" : "REFRESH PLAYLIST"}</Text>
         </Pressable>
       )}

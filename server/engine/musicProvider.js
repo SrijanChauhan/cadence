@@ -72,10 +72,21 @@ function isStockMusic(track) {
  * artists (first occurrence wins — results are already roughly rank/BPM-
  * ordered per source), then sorts the merged pool by closeness to the
  * target BPM band so genre variety doesn't come at the cost of tempo match.
+ *
+ * excludeIds: iTunes's search ranking is deterministic — the same query
+ * returns the same top results every time, so a plain re-call (e.g. a
+ * "Refresh Playlist" tap) would silently hand back the identical track set.
+ * When the client sends track ids it has already seen, this fetches a
+ * larger per-term pool specifically to compensate, then drops those ids
+ * before ranking, so a refresh surfaces genuinely different tracks instead
+ * of re-serving the same ones.
  */
-export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20, onDiag = () => {} }) {
+export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20, excludeIds = [], onDiag = () => {} }) {
   const terms = seedPool && seedPool.length ? seedPool : [undefined];
-  const perTerm = Math.max(6, Math.ceil((limit * 1.5) / terms.length));
+  const excludeSet = new Set(excludeIds);
+  // fetch extra headroom when excluding, since a chunk of each term's
+  // results may get filtered straight back out as already-seen
+  const perTerm = Math.max(6, Math.ceil((limit * (excludeSet.size ? 2.5 : 1.5)) / terms.length));
 
   const [first, ...rest] = terms;
   const results = [await searchTracks({ seedTerms: first, bpmMin, bpmMax, limit: perTerm, onDiag })];
@@ -92,6 +103,12 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
   merged = merged.filter((t) => !isStockMusic(t));
   if (beforeJunkFilter !== merged.length) {
     onDiag(`dropped ${beforeJunkFilter - merged.length} stock/library-music junk tracks`);
+  }
+
+  if (excludeSet.size) {
+    const beforeExclude = merged.length;
+    merged = merged.filter((t) => !excludeSet.has(t.id));
+    onDiag(`dropped ${beforeExclude - merged.length} already-seen tracks (refresh)`);
   }
 
   const seenArtists = new Set();

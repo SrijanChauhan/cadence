@@ -39,6 +39,9 @@ app.get("/activities", (_req, res) => res.json(ACTIVITIES));
  * body: { traits, activity, moodLabels?: string[], moodText?: string,
  *         lat?: number, lon?: number, spotifyArtists?: string[],
  *         spotifyGenres?: string[] (accepted, currently unused — see below),
+ *         excludeIds?: string[] (already-seen track ids, e.g. from a
+ *         "Refresh Playlist" tap — iTunes's search ranking is deterministic,
+ *         so without this a refresh would just hand back the same tracks),
  *         limit?: number }
  * returns: { target, tracks, reserve, mood, weather, place, diag }
  */
@@ -47,7 +50,7 @@ app.post("/recommend", async (req, res) => {
   try {
     const {
       traits, activity, moodLabels = [], moodText = "", lat, lon,
-      spotifyArtists = [], limit = 15,
+      spotifyArtists = [], excludeIds = [], limit = 15,
     } = req.body;
     if (!traits || !activity) return res.status(400).json({ error: "traits and activity are required" });
 
@@ -102,6 +105,7 @@ app.post("/recommend", async (req, res) => {
       bpmMin: target.bpmMin,
       bpmMax: target.bpmMax,
       limit: limit + 15,
+      excludeIds,
       onDiag: (m) => diag.push(m),
     });
 
