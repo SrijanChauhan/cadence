@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking } from "react-native";
-import { personalityType } from "./personalityType";
+import { Audio } from "expo-av";
 import { getPlaylistHistory } from "./playlistHistory";
+import PersonalityPlacard from "./PersonalityPlacard";
 
 const VOLT = "#D6FF3D";
 
@@ -37,8 +38,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
         <PlaylistDetail record={selected} />
       ) : (
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
-          <Text style={s.kicker}>YOUR TYPE</Text>
-          <Text style={s.typeText}>{personalityType(traits)}</Text>
+          <PersonalityPlacard traits={traits} />
           <Pressable style={s.recalBtn} onPress={onRecalibrate}>
             <Text style={s.recalBtnText}>Recalibrate</Text>
           </Pressable>
@@ -70,6 +70,31 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
 }
 
 function PlaylistDetail({ record }) {
+  const [playingId, setPlayingId] = useState(null);
+  const [playError, setPlayError] = useState(null);
+  const sound = useRef(null);
+
+  // stop playback if the user navigates back out of this detail view
+  useEffect(() => () => { sound.current?.unloadAsync(); }, []);
+
+  const play = async (track) => {
+    setPlayError(null);
+    try {
+      if (sound.current) { await sound.current.unloadAsync(); sound.current = null; }
+      if (playingId === track.id) { setPlayingId(null); return; }
+      if (!track.preview) { setPlayError("This track has no preview clip."); return; }
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
+      const { sound: sd } = await Audio.Sound.createAsync({ uri: track.preview }, { shouldPlay: true });
+      sound.current = sd;
+      setPlayingId(track.id);
+      sd.setOnPlaybackStatusUpdate((st) => { if (st.didJustFinish) setPlayingId(null); });
+    } catch {
+      // saved playlists can be old — iTunes preview links are far more
+      // stable than Deezer's ever were, but not guaranteed to never expire
+      setPlayError("Preview playback failed — this link may have expired since it was saved.");
+    }
+  };
+
   return (
     <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
       <Text style={s.detailName}>{record.name}</Text>
@@ -81,6 +106,7 @@ function PlaylistDetail({ record }) {
       )}
 
       <Text style={[s.kicker, { marginTop: 24 }]}>TRACKS · {record.tracks?.length || 0}</Text>
+      {playError && <Text style={s.playError}>{playError}</Text>}
       {(record.tracks || []).map((t) => (
         <View key={t.id} style={s.trackRow}>
           {t.cover ? <Image source={{ uri: t.cover }} style={s.trackCover} /> : <View style={[s.trackCover, s.trackCoverEmpty]} />}
@@ -88,6 +114,11 @@ function PlaylistDetail({ record }) {
             <Text style={s.trackTitle} numberOfLines={1}>{t.title}</Text>
             <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
           </View>
+          <Pressable style={s.trackPlayBtn} onPress={() => play(t)} hitSlop={8}>
+            <Text style={[s.trackPlayIcon, playingId === t.id && s.trackPlayIconActive]}>
+              {playingId === t.id ? "❚❚" : "▶"}
+            </Text>
+          </Pressable>
         </View>
       ))}
     </ScrollView>
@@ -106,7 +137,6 @@ const s = StyleSheet.create({
 
   body: { paddingHorizontal: 22, paddingBottom: 60 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
-  typeText: { color: VOLT, fontSize: 38, fontWeight: "900", letterSpacing: -1, marginBottom: 18 },
   recalBtn: { alignSelf: "flex-start", borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 10, paddingHorizontal: 20 },
   recalBtnText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
 
@@ -125,4 +155,8 @@ const s = StyleSheet.create({
   trackCoverEmpty: { backgroundColor: "#141414" },
   trackTitle: { color: "#EDEDED", fontSize: 13.5, fontWeight: "700" },
   trackArtist: { color: "#7A7A7A", fontSize: 11.5, marginTop: 1 },
+  trackPlayBtn: { padding: 8 },
+  trackPlayIcon: { color: "#7A7A7A", fontSize: 15, fontWeight: "800" },
+  trackPlayIconActive: { color: VOLT },
+  playError: { color: "#FF5A4E", fontSize: 12.5, fontWeight: "600", lineHeight: 18, marginBottom: 10 },
 });
