@@ -477,8 +477,11 @@ export default function PlaylistScreen({ traits }) {
           </Text>
         </Pressable>
       )}
-      <Text style={s.kicker}>PICK A MODE</Text>
-      <View style={s.chips}>
+      {/* No "PICK A MODE" label here — CADENCE sits directly above this in
+          the app header, and stacking a second title-style line right below
+          it read as a redundant double-heading. The chips are activity
+          names (Deep Work, Workout, ...), self-explanatory without a label. */}
+      <View style={s.chipsFirst}>
         {ACTIVITIES.map((a) => (
           <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
             <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
@@ -689,8 +692,7 @@ const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
-  kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 12 },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 18 },
+  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 18, marginTop: 10 },
   chip: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
