@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, StyleSheet, View, Text, Pressable, ActivityIndicator } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import FrontPage from "./src/FrontPage";
 import OnboardingScreen from "./src/OnboardingScreen";
@@ -49,36 +50,43 @@ export default function App() {
 
   if (loading || !minTimeElapsed) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <StatusBar style="light" />
-        <FrontPage />
-      </SafeAreaView>
+      // GestureHandlerRootView must wrap the whole app (not just the screen
+      // that uses gestures) - it's required infrastructure for gesture-handler
+      // to work at all, per its own setup docs, not something scoped per-screen
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView style={styles.safe}>
+          <StatusBar style="light" />
+          <FrontPage />
+        </SafeAreaView>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
-      {traits ? (
-        <View style={{ flex: 1 }}>
-          <View style={styles.top}>
-            <Text style={styles.wordmark}>CADENCE</Text>
-            <Pressable onPress={() => setProfileOpen(true)}>
-              <Text style={styles.profileLink}>Profile</Text>
-            </Pressable>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.safe}>
+        <StatusBar style="light" />
+        {traits ? (
+          <View style={{ flex: 1 }}>
+            <View style={styles.top}>
+              <Text style={styles.wordmark}>CADENCE</Text>
+              <Pressable onPress={() => setProfileOpen(true)}>
+                <Text style={styles.profileLink}>Profile</Text>
+              </Pressable>
+            </View>
+            <PlaylistScreen traits={traits} />
+            <ProfileScreen
+              visible={profileOpen}
+              traits={traits}
+              onClose={() => setProfileOpen(false)}
+              onRecalibrate={recalibrate}
+            />
           </View>
-          <PlaylistScreen traits={traits} />
-          <ProfileScreen
-            visible={profileOpen}
-            traits={traits}
-            onClose={() => setProfileOpen(false)}
-            onRecalibrate={recalibrate}
-          />
-        </View>
-      ) : (
-        <OnboardingScreen onComplete={saveProfile} onSkip={skipPersonality} />
-      )}
-    </SafeAreaView>
+        ) : (
+          <OnboardingScreen onComplete={saveProfile} onSkip={skipPersonality} />
+        )}
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 

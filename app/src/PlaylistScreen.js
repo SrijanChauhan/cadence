@@ -9,6 +9,7 @@ import { captureRef } from "react-native-view-shot";
 import { BACKEND_URL } from "./config";
 import SessionBanner from "./SessionBanner";
 import CoverArt from "./CoverArt";
+import MyPicksStrip from "./MyPicksStrip";
 import { addToPlaylistHistory } from "./playlistHistory";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
@@ -311,6 +312,14 @@ export default function PlaylistScreen({ traits }) {
   };
   const removeFromMyPicks = (id) => setMyPicks((ps) => ps.filter((p) => p.id !== id));
   const isMyPick = (id) => myPicks.some((p) => p.id === id);
+  const reorderMyPicks = (fromIndex, toIndex) => {
+    setMyPicks((ps) => {
+      const next = [...ps];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
 
   const like = (track) => { giveFeedback(track, "like"); enqueue(track); addToMyPicks(track); };
 
@@ -517,24 +526,12 @@ export default function PlaylistScreen({ traits }) {
         </View>
       )}
 
-      {myPicks.length > 0 && (
-        <View style={s.picksWrap}>
-          <Text style={s.picksTitle}>MY PICKS · {myPicks.length}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {myPicks.map((t) => (
-              <View key={t.id} style={s.pick}>
-                <Pressable onPress={() => openApple(t)}>
-                  {t.cover ? <Image source={{ uri: t.cover }} style={s.pickCover} /> : <View style={[s.pickCover, s.coverEmpty]} />}
-                  <Text style={s.pickTitle} numberOfLines={1}>{t.title}</Text>
-                </Pressable>
-                <Pressable style={s.pickRemove} onPress={() => removeFromMyPicks(t.id)} hitSlop={8}>
-                  <Text style={s.pickRemoveText}>{"✕"}</Text>
-                </Pressable>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
+      <MyPicksStrip
+        picks={myPicks}
+        onOpenApple={openApple}
+        onReorder={reorderMyPicks}
+        onRemove={removeFromMyPicks}
+      />
 
       {loading && (
         <View style={{ marginTop: 26, alignItems: "center" }}>
@@ -701,14 +698,6 @@ const s = StyleSheet.create({
   lambdaBox: { alignItems: "center" },
   lambdaNum: { color: VOLT, fontSize: 56, fontWeight: "900", letterSpacing: -2, lineHeight: 58 },
   lambdaLabel: { color: "#6E6E6E", fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
-
-  picksWrap: { marginBottom: 14 },
-  picksTitle: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 8 },
-  pick: { width: 84, marginRight: 10, position: "relative" },
-  pickCover: { width: 84, height: 84, borderRadius: 14, marginBottom: 4 },
-  pickTitle: { color: "#BABABA", fontSize: 10.5, fontWeight: "700" },
-  pickRemove: { position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#333", alignItems: "center", justifyContent: "center" },
-  pickRemoveText: { color: "#DADADA", fontSize: 11, fontWeight: "900" },
 
   loadingNote: { color: "#6E6E6E", fontSize: 11.5, marginTop: 8, fontWeight: "600" },
   error: { color: "#FF5A4E", fontSize: 13.5, fontWeight: "700", marginTop: 14, lineHeight: 19 },
