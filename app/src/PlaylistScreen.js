@@ -207,7 +207,7 @@ export default function PlaylistScreen({ traits }) {
         lat: loc?.lat, lon: loc?.lon,
         spotifyArtists, spotifyGenres,
         excludeIds,
-        limit: 15,
+        limit: 8,
       };
       const res = await fetch(`${BACKEND_URL}/recommend`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

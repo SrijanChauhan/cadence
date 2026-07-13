@@ -50,7 +50,7 @@ app.post("/recommend", async (req, res) => {
   try {
     const {
       traits, activity, moodLabels = [], moodText = "", lat, lon,
-      spotifyArtists = [], excludeIds = [], limit = 15,
+      spotifyArtists = [], excludeIds = [], limit = 8,
     } = req.body;
     if (!traits || !activity) return res.status(400).json({ error: "traits and activity are required" });
 
