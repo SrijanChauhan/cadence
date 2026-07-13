@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Animated, Easing, Platform,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { useTheme } from "./theme";
 
 /**
@@ -188,22 +187,29 @@ function Quiz({ s, idx, items, answers, onAnswer, onBack }) {
   const item = items[idx];
   return (
     <View style={s.quizWrap}>
-      <View style={s.counterRow}>
-        <BounceNumber value={String(idx + 1).padStart(2, "0")} style={s.counter} />
-        <Text style={s.counterTotal}>/ {items.length}</Text>
-      </View>
+      {/* Counter/prompt/answers centered in the remaining space (same
+          flex:1 + justifyContent:"center" pattern Intro already uses) so
+          the answers sit in the middle of the screen instead of stacking
+          at the top and leaving the bottom half empty. Back stays pinned
+          to the true bottom as a sibling, not inside the centered block. */}
+      <View style={s.quizCenter}>
+        <View style={s.counterRow}>
+          <BounceNumber value={String(idx + 1).padStart(2, "0")} style={s.counter} />
+          <Text style={s.counterTotal}>/ {items.length}</Text>
+        </View>
 
-      <Text style={s.prompt}>{item.t}</Text>
+        <Text style={s.prompt}>{item.t}</Text>
 
-      <View style={s.likertWrap}>
-        {LIKERT.map((o) => {
-          const active = answers[idx] === o.v;
-          return (
-            <Pressable key={o.v} style={[s.opt, active && s.optActive]} onPress={() => onAnswer(o.v)}>
-              <Text style={[s.optLabel, active && s.optLabelActive]}>{o.label}</Text>
-            </Pressable>
-          );
-        })}
+        <View style={s.likertWrap}>
+          {LIKERT.map((o) => {
+            const active = answers[idx] === o.v;
+            return (
+              <Pressable key={o.v} style={[s.opt, active && s.optActive]} onPress={() => onAnswer(o.v)}>
+                <Text style={[s.optLabel, active && s.optLabelActive]}>{o.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <Pressable onPress={onBack} disabled={idx === 0} style={s.backBtn} hitSlop={12}>
@@ -215,7 +221,6 @@ function Quiz({ s, idx, items, answers, onAnswer, onBack }) {
 
 function Results({ s, data, onRestart, onComplete }) {
   const anims = useRef(TRAITS.map(() => new Animated.Value(0))).current;
-  const [copied, setCopied] = useState(false);
   useEffect(() => {
     Animated.stagger(80, TRAITS.map((t, i) =>
       Animated.spring(anims[i], { toValue: data[t.key], friction: 5, tension: 60, useNativeDriver: false })
@@ -223,7 +228,6 @@ function Results({ s, data, onRestart, onComplete }) {
   }, []);
 
   const vector = TRAITS.reduce((a, t) => ({ ...a, [t.key]: +(data[t.key] / 100).toFixed(2) }), {});
-  const copy = async () => { await Clipboard.setStringAsync(JSON.stringify(vector)); setCopied(true); setTimeout(() => setCopied(false), 1600); };
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={s.resultsWrap} showsVerticalScrollIndicator={false}>
@@ -260,10 +264,7 @@ function Results({ s, data, onRestart, onComplete }) {
         </Pressable>
       )}
 
-      <View style={s.rowSplit}>
-        <Pressable onPress={copy}><Text style={s.back}>{copied ? "Copied" : "Copy Vector JSON"}</Text></Pressable>
-        <Pressable onPress={onRestart}><Text style={s.back}>Retake</Text></Pressable>
-      </View>
+      <Pressable onPress={onRestart} style={s.retakeBtn}><Text style={s.back}>Retake</Text></Pressable>
     </ScrollView>
   );
 }
@@ -289,7 +290,8 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   skipBtn: { alignItems: "center", paddingVertical: 10 },
   skipBtnText: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
 
-  quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18 },
+  quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18, paddingBottom: 20 },
+  quizCenter: { flex: 1, justifyContent: "center" },
   counterRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },
   counter: { color: VOLT, fontSize: 84, fontWeight: "900", fontFamily: rounded, letterSpacing: -3 },
   counterTotal: { color: "#4A4A4A", fontSize: 22, fontWeight: "900" },
@@ -318,5 +320,5 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   readDesc: { color: "#8A8A8A", fontSize: 12.5, lineHeight: 17, marginTop: 2 },
   readPct: { color: "#FFF", fontSize: 18, fontWeight: "900" },
 
-  rowSplit: { flexDirection: "row", justifyContent: "space-between", marginTop: 22 },
+  retakeBtn: { alignSelf: "center", marginTop: 22, paddingVertical: 8 },
 });
