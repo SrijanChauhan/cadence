@@ -100,7 +100,7 @@ function BounceNumber({ value, style }) {
 
 export default function OnboardingScreen({ onComplete, onSkip }) {
   const { theme } = useTheme();
-  const s = useMemo(() => buildStyles(theme.accent, theme.bg), [theme]);
+  const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface), [theme]);
   const [screen, setScreen] = useState("intro");
   const [idx, setIdx] = useState(0);
   const [quizItems, setQuizItems] = useState(pickQuizItems);
@@ -270,7 +270,7 @@ function Results({ s, data, onRestart, onComplete }) {
 
 const rounded = Platform.select({ ios: "System", android: "sans-serif-black", default: "System" });
 
-const buildStyles = (VOLT, BG) => StyleSheet.create({
+const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   // Intro's own column: the centered content block takes all remaining
   // space (flex:1), which naturally pushes skipBtn as its sibling down to
@@ -296,7 +296,7 @@ const buildStyles = (VOLT, BG) => StyleSheet.create({
   prompt: { color: "#FFF", fontSize: 26, fontWeight: "800", lineHeight: 33, marginBottom: 28, minHeight: 66 },
 
   likertWrap: { gap: 10 },
-  opt: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 15, paddingHorizontal: 22, backgroundColor: "#0A0A0A" },
+  opt: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 15, paddingHorizontal: 22, backgroundColor: SURFACE },
   optActive: { backgroundColor: VOLT, borderColor: VOLT },
   optLabel: { color: "#DADADA", fontSize: 15, fontWeight: "700" },
   optLabelActive: { color: "#000" },
@@ -308,7 +308,7 @@ const buildStyles = (VOLT, BG) => StyleSheet.create({
   eq: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 220, paddingTop: 12 },
   eqBand: { alignItems: "center", justifyContent: "flex-end", height: "100%", flex: 1 },
   eqScore: { color: VOLT, fontSize: 24, fontWeight: "900", fontFamily: rounded, marginBottom: 6 },
-  eqTrack: { width: 34, flex: 1, backgroundColor: "#111", borderRadius: 17, justifyContent: "flex-end", overflow: "hidden" },
+  eqTrack: { width: 34, flex: 1, backgroundColor: SURFACE, borderRadius: 17, justifyContent: "flex-end", overflow: "hidden" },
   eqFill: { width: "100%", borderRadius: 17, backgroundColor: VOLT, minHeight: 8 },
   eqKey: { color: "#FFF", fontSize: 16, fontWeight: "900", marginTop: 8 },
 
