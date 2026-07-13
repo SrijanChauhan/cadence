@@ -67,6 +67,16 @@ export default function PlaylistScreen({ traits }) {
   // loaded activity's results.
   const [myPicks, setMyPicks] = useState([]);
   const myPicksLoaded = useRef(false);
+
+  // Refresh Playlist: capped at 10 uses per activity session, and excludes
+  // the FULL cumulative set of everything shown so far (not just the most
+  // recent batch) — otherwise refresh #2 could cycle back to tracks from
+  // before refresh #1, since only the immediately-prior batch would be
+  // excluded. Reset whenever a genuinely new activity/mode session starts
+  // (confirmMood/skipMood), not on every load() call.
+  const MAX_REFRESHES = 10;
+  const [refreshCount, setRefreshCount] = useState(0);
+  const seenTrackIds = useRef(new Set());
   const buckets = useRef({});
   const sound = useRef(null);
   const playStart = useRef(null);
@@ -174,6 +184,13 @@ export default function PlaylistScreen({ traits }) {
   };
 
   const load = async (act, moodInput, excludeIds = []) => {
+    // excludeIds is only ever non-empty when refreshPlaylist() calls this —
+    // every other caller (a fresh activity pick, retry, Spotify-reconnect
+    // reload) means a new baseline, so the refresh budget/seen-set resets
+    if (excludeIds.length === 0) {
+      seenTrackIds.current = new Set();
+      setRefreshCount(0);
+    }
     setActivity(act); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]); setQueue([]);
     const pushDiag = (m) => setDiag((d) => [...d, m]);
     try {
@@ -225,6 +242,11 @@ export default function PlaylistScreen({ traits }) {
       setWeather(json.weather || null);
       setPlace(json.place || null);
       setTracks(rankTracks(merged, buckets.current[act]));
+
+      // accumulate into the cumulative seen-set (merged already includes any
+      // queue-restored tracks, not just this response's own tracks/reserve)
+      merged.forEach((t) => seenTrackIds.current.add(t.id));
+      (json.reserve || []).forEach((t) => seenTrackIds.current.add(t.id));
     } catch (e) {
       setError(e.message || "Couldn't reach the Cadence backend.");
     } finally {
@@ -234,11 +256,13 @@ export default function PlaylistScreen({ traits }) {
 
   // iTunes's search ranking is deterministic, so a plain re-load for the same
   // activity would hand back the same tracks — excludeIds tells the backend
-  // which ones we have already seen (current tracks + reserve) so it can
-  // fetch a bigger pool and surface genuinely different ones instead.
+  // the FULL cumulative set of everything shown so far this session (not
+  // just the current batch), so each of up to 10 refreshes surfaces
+  // genuinely different tracks instead of eventually cycling back.
   const refreshPlaylist = () => {
-    const excludeIds = [...tracks.map((t) => t.id), ...reserve.map((t) => t.id)];
-    load(activity, undefined, excludeIds);
+    if (refreshCount >= MAX_REFRESHES || loading) return;
+    setRefreshCount((c) => c + 1);
+    load(activity, undefined, [...seenTrackIds.current]);
   };
 
   const play = async (track) => {
@@ -557,11 +581,19 @@ export default function PlaylistScreen({ traits }) {
       )}
 
       {activity && tracks.length > 0 && (
-        // Re-fetches this activity's pool from scratch. Deliberately does NOT
-        // touch myPicks — that store is fully decoupled from `tracks`/`feedback`
-        // (see like()/addToMyPicks), so a refresh has nothing to reset there.
-        <Pressable style={s.refreshBtn} onPress={refreshPlaylist} disabled={loading}>
-          <Text style={s.refreshBtnText}>{loading ? "REFRESHING…" : "REFRESH PLAYLIST"}</Text>
+        // Re-fetches this activity's pool from scratch, excluding everything
+        // shown so far this session. Deliberately does NOT touch myPicks —
+        // that store is fully decoupled from `tracks`/`feedback` (see
+        // like()/addToMyPicks), so a refresh has nothing to reset there.
+        // Capped at MAX_REFRESHES; resets on a genuinely new activity/mode pick.
+        <Pressable
+          style={[s.refreshBtn, refreshCount >= MAX_REFRESHES && s.refreshBtnMaxed]}
+          onPress={refreshPlaylist}
+          disabled={loading || refreshCount >= MAX_REFRESHES}
+        >
+          <Text style={s.refreshBtnText}>
+            {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : `REFRESH PLAYLIST (${MAX_REFRESHES - refreshCount} LEFT)`}
+          </Text>
         </Pressable>
       )}
     </ScrollView>
@@ -696,6 +728,7 @@ const s = StyleSheet.create({
   iconVolt: { color: VOLT },
   footnote: { color: "#6E6E6E", fontSize: 11.5, lineHeight: 17, marginTop: 18 },
   refreshBtn: { borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 13, alignItems: "center", marginTop: 18, marginBottom: 8 },
+  refreshBtnMaxed: { opacity: 0.4 },
   refreshBtnText: { color: "#DADADA", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
   nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: "#111", borderRadius: 20, borderWidth: 1, borderColor: "#222", flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
