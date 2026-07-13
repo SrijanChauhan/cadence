@@ -17,6 +17,11 @@ import { View, Text, StyleSheet, Animated, Platform } from "react-native";
 export const HELVETICA = Platform.select({ ios: "Helvetica", android: "sans-serif", default: "Helvetica" });
 export const HELVETICA_BOLD = Platform.select({ ios: "Helvetica-Bold", android: "sans-serif", default: "Helvetica-Bold" });
 
+// weather.js's condition strings are lowercase ("rain", "clear", ...) since
+// they're also used as plain equality checks (condition === "rain") in
+// BlobLayer below — capitalize only where it's actually displayed as text.
+export const capitalize = (str) => (str ? str.charAt(0).toUpperCase() + str.slice(1) : str);
+
 export function moodColor(valence = 0, arousal = 0, jitter = 0) {
   const hue = 205 - ((valence + 1) / 2) * 165 + jitter; // -1 -> ~205 (blue), 1 -> ~40 (warm orange)
   const sat = 35 + ((arousal + 1) / 2) * 50; // calm = muted, energized = vivid
@@ -143,7 +148,7 @@ const SessionBanner = forwardRef(function SessionBanner({ mood, weather, activit
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const weatherStr = weather?.tempC != null ? `${Math.round(weather.tempC)}°C, ${weather.condition}` : null;
+  const weatherStr = weather?.tempC != null ? `${Math.round(weather.tempC)}°C, ${capitalize(weather.condition)}` : null;
 
   const baseColor = moodColor(mood?.valence ?? 0, mood?.arousal ?? 0);
 

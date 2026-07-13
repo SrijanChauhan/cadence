@@ -193,7 +193,15 @@ export default function PlaylistScreen({ traits }) {
       seenTrackIds.current = new Set();
       setRefreshCount(0);
     }
-    setActivity(act); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]); setQueue([]);
+    setActivity(act); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]);
+    // Queue is NOT reset on a refresh (excludeIds.length > 0) — a refresh
+    // reload's own setQueue([]) here used to race the queue-persist effect
+    // below: that effect fires on every `queue` change and would write the
+    // now-empty queue to AsyncStorage before this function's own restore
+    // read further down got a chance to run, clobbering the very data it
+    // was about to restore. A genuinely new activity/session still clears
+    // it, same as tracks/feedback above.
+    if (excludeIds.length === 0) setQueue([]);
     const pushDiag = (m) => setDiag((d) => [...d, m]);
     try {
       const loc = await getLocation();
@@ -356,14 +364,18 @@ export default function PlaylistScreen({ traits }) {
 
   const [saveState, setSaveState] = useState("idle");
   const [saveMsg, setSaveMsg] = useState("");
+  const [picksSaveState, setPicksSaveState] = useState("idle");
+  const [picksSaveMsg, setPicksSaveMsg] = useState("");
 
-  // Each word capitalized, spaces stripped: "Deep Work" -> "DeepWork"
-  const capitalizeWords = (s) => (s || "").split(/\s+/).filter(Boolean).join("");
-
+  // Readable, spaced-out title rather than a dot-joined "Cadence.DeepWork.
+  // Energetic" concatenation — that read like a file path, not a playlist
+  // name. "Neutral" (analyzeCombined's default when no mood was given) is
+  // dropped rather than shown, since it's not a mood the user actually
+  // picked.
   const playlistName = () => {
-    const actLabel = capitalizeWords(ACTIVITIES.find((a) => a.key === activity)?.label) || "Session";
-    const moodLabel = capitalizeWords(mood?.label) || "Mixed";
-    return `Cadence.${actLabel}.${moodLabel}`;
+    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label || "Session";
+    const moodLabel = mood?.label && mood.label !== "Neutral" ? mood.label : null;
+    return moodLabel ? `Cadence — ${actLabel}, ${moodLabel}` : `Cadence — ${actLabel}`;
   };
 
   // Turns the session's inputs (when, where, weather, mood, activity, tempo)
@@ -395,6 +407,39 @@ export default function PlaylistScreen({ traits }) {
     return `Made by Cadence. ${story}`;
   };
 
+  // best-effort: a failed capture shouldn't block the save, but log why
+  // so a cover-art problem is debuggable instead of just silently absent.
+  // Captures the dedicated off-screen SQUARE composition (CoverArt), not
+  // the wide on-screen banner — Spotify expects a square cover, and a
+  // rectangular screenshot would just get cropped/letterboxed. Starts at
+  // quality 0.9 (this content is mostly flat color fields, so it usually
+  // compresses well under Spotify's 256KB limit even at high quality),
+  // but device pixel ratio varies (2x-3x), so falls back to progressively
+  // lower quality rather than risk silently exceeding the hard 256KB
+  // limit and failing the whole upload — sharper when it can be, but
+  // never at the cost of the upload just not happening. Shared by both
+  // the per-activity queue save and the My Picks save below.
+  const captureCoverArt = async () => {
+    let coverImageBase64 = null;
+    try {
+      if (coverArtRef.current) {
+        const SPOTIFY_MAX_BYTES = 256 * 1024;
+        for (const quality of [0.9, 0.75, 0.6, 0.45]) {
+          const candidate = await captureRef(coverArtRef, { format: "jpg", quality, result: "base64" });
+          const approxBytes = candidate.length * 0.75; // base64 -> raw byte estimate
+          if (approxBytes <= SPOTIFY_MAX_BYTES) { coverImageBase64 = candidate; break; }
+          console.warn(`[cover art] quality ${quality} too large (~${Math.round(approxBytes / 1024)}KB), trying lower`);
+        }
+        if (!coverImageBase64) console.warn("[cover art] no quality level fit under 256KB — skipping cover upload");
+      } else {
+        console.warn("[cover art] coverArtRef not attached — CoverArt may not be mounted yet");
+      }
+    } catch (e) {
+      console.warn("[cover art] captureRef failed:", e.message);
+    }
+    return coverImageBase64;
+  };
+
   const saveToSpotify = async () => {
     try {
       if (!hasSpotifyAuth()) {
@@ -405,36 +450,7 @@ export default function PlaylistScreen({ traits }) {
       }
       setSaveState("saving"); setSaveMsg("Building your Spotify playlist…");
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
-
-      // best-effort: a failed capture shouldn't block the save, but log why
-      // so a cover-art problem is debuggable instead of just silently absent.
-      // Captures the dedicated off-screen SQUARE composition (CoverArt), not
-      // the wide on-screen banner — Spotify expects a square cover, and a
-      // rectangular screenshot would just get cropped/letterboxed. Starts at
-      // quality 0.9 (this content is mostly flat color fields, so it usually
-      // compresses well under Spotify's 256KB limit even at high quality),
-      // but device pixel ratio varies (2x-3x), so falls back to progressively
-      // lower quality rather than risk silently exceeding the hard 256KB
-      // limit and failing the whole upload — sharper when it can be, but
-      // never at the cost of the upload just not happening.
-      let coverImageBase64 = null;
-      try {
-        if (coverArtRef.current) {
-          const SPOTIFY_MAX_BYTES = 256 * 1024;
-          for (const quality of [0.9, 0.75, 0.6, 0.45]) {
-            const candidate = await captureRef(coverArtRef, { format: "jpg", quality, result: "base64" });
-            const approxBytes = candidate.length * 0.75; // base64 -> raw byte estimate
-            if (approxBytes <= SPOTIFY_MAX_BYTES) { coverImageBase64 = candidate; break; }
-            console.warn(`[cover art] quality ${quality} too large (~${Math.round(approxBytes / 1024)}KB), trying lower`);
-          }
-          if (!coverImageBase64) console.warn("[cover art] no quality level fit under 256KB — skipping cover upload");
-        } else {
-          console.warn("[cover art] coverArtRef not attached — CoverArt may not be mounted yet");
-        }
-      } catch (e) {
-        console.warn("[cover art] captureRef failed:", e.message);
-      }
-
+      const coverImageBase64 = await captureCoverArt();
       const name = playlistName();
       const story = playlistStory();
       const { matchedCount, totalCount, url, coverUploaded } = await createPlaylistFromTracks(list, {
@@ -455,6 +471,44 @@ export default function PlaylistScreen({ traits }) {
       );
     } catch (e) {
       setSaveState("error"); setSaveMsg(e.message || "Couldn't save to Spotify.");
+    }
+  };
+
+  // My Picks spans however many activities/refreshes the session covers —
+  // once the catalog "feels done", this saves the whole accumulated
+  // favourites strip as its own Spotify playlist, independent of whichever
+  // single activity's queue is currently open.
+  const saveMyPicksToSpotify = async () => {
+    try {
+      if (!hasSpotifyAuth()) {
+        setPicksSaveState("connecting"); setPicksSaveMsg("Opening Spotify sign-in…");
+        const ok = await connectSpotify();
+        setSpotifyConnected(ok && hasSpotifyAuth());
+        if (!ok) { setPicksSaveState("error"); setPicksSaveMsg("Spotify sign-in was cancelled."); return; }
+      }
+      setPicksSaveState("saving"); setPicksSaveMsg("Building your Spotify playlist…");
+      const list = myPicks;
+      const coverImageBase64 = await captureCoverArt();
+      const name = "Cadence — My Picks";
+      const story = `Made by Cadence. Your favourited catalog across sessions — ${list.length} track${list.length === 1 ? "" : "s"}.`;
+      const { matchedCount, totalCount, url, coverUploaded } = await createPlaylistFromTracks(list, {
+        name, description: story, coverImageBase64,
+      });
+
+      addToPlaylistHistory({
+        name, story,
+        activityLabel: "My Picks",
+        mood, weather, place,
+        tracks: list,
+        spotifyUrl: url,
+      });
+
+      setPicksSaveState("done");
+      setPicksSaveMsg(
+        `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
+      );
+    } catch (e) {
+      setPicksSaveState("error"); setPicksSaveMsg(e.message || "Couldn't save to Spotify.");
     }
   };
 
@@ -536,6 +590,25 @@ export default function PlaylistScreen({ traits }) {
         onReorder={reorderMyPicks}
         onRemove={removeFromMyPicks}
       />
+
+      {myPicks.length > 0 && (
+        // Saves the whole accumulated My Picks strip as its own Spotify
+        // playlist — independent of the current activity's queue, so it
+        // stays available once the catalog spans several activities/
+        // refreshes, not just whatever's queued right now.
+        <Pressable
+          style={[s.picksSaveBtn, picksSaveState === "saving" && s.refreshBtnMaxed]}
+          onPress={saveMyPicksToSpotify}
+          disabled={picksSaveState === "saving" || picksSaveState === "connecting"}
+        >
+          <Text style={s.picksSaveBtnText}>
+            {picksSaveState === "saving" ? "SAVING…" : picksSaveState === "connecting" ? "CONNECTING…" : `SAVE MY PICKS TO SPOTIFY (${myPicks.length})`}
+          </Text>
+        </Pressable>
+      )}
+      {!!picksSaveMsg && (
+        <Text style={[s.saveMsg, picksSaveState === "error" && s.saveMsgError]}>{picksSaveMsg}</Text>
+      )}
 
       {loading && (
         <View style={{ marginTop: 26, alignItems: "center" }}>
@@ -726,6 +799,9 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   refreshBtn: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 13, alignItems: "center", marginTop: 18, marginBottom: 8 },
   refreshBtnMaxed: { opacity: 0.4 },
   refreshBtnText: { color: "#DADADA", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
+
+  picksSaveBtn: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 6 },
+  picksSaveBtnText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
   nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
   nowCover: { width: 44, height: 44, borderRadius: 12 },

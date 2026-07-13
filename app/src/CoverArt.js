@@ -1,6 +1,6 @@
 import React, { forwardRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { BlobLayer, moodColor, HELVETICA, HELVETICA_BOLD } from "./SessionBanner";
+import { BlobLayer, moodColor, capitalize, HELVETICA, HELVETICA_BOLD } from "./SessionBanner";
 
 /**
  * Cadence — square cover-art composition, dedicated to the Spotify upload.
@@ -30,7 +30,7 @@ const CoverArt = forwardRef(function CoverArt({ mood, weather, activityLabel, pl
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  const weatherStr = weather?.tempC != null ? `${Math.round(weather.tempC)}°C, ${weather.condition}` : null;
+  const weatherStr = weather?.tempC != null ? `${Math.round(weather.tempC)}°C, ${capitalize(weather.condition)}` : null;
 
   return (
     <View ref={ref} style={[s.square, { backgroundColor: baseColor }]}>
