@@ -123,9 +123,14 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
     }, 150);
   };
 
+  // Back was previously disabled outright on question 1 — nothing to go
+  // back TO within the quiz, so it just sat there dead, which reads as
+  // "doesn't work" rather than "correctly has nothing to do." Now it steps
+  // back out to Intro instead of going inert, so it's always live.
   const back = () => {
     clearTimeout(advanceTimeout.current);
-    setIdx((i) => Math.max(0, i - 1));
+    if (idx === 0) setScreen("intro");
+    else setIdx((i) => Math.max(0, i - 1));
   };
 
   const scores = () => {
@@ -212,8 +217,8 @@ function Quiz({ s, idx, items, answers, onAnswer, onBack }) {
         </View>
       </View>
 
-      <Pressable onPress={onBack} disabled={idx === 0} style={s.backBtn} hitSlop={12}>
-        <Text style={[s.back, idx === 0 && s.backDisabled]}>← Back</Text>
+      <Pressable onPress={onBack} style={s.backBtn} hitSlop={12}>
+        <Text style={s.back}>← Back</Text>
       </Pressable>
     </View>
   );
@@ -304,7 +309,6 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   optLabelActive: { color: "#000" },
   backBtn: { marginTop: 22, alignSelf: "flex-start", paddingVertical: 8, paddingHorizontal: 4 },
   back: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
-  backDisabled: { opacity: 0.3 },
 
   resultsWrap: { paddingHorizontal: 26, paddingTop: 16, paddingBottom: 46 },
   eq: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 220, paddingTop: 12 },
