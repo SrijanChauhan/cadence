@@ -14,10 +14,10 @@ import { View, Text, StyleSheet, Animated, Platform } from "react-native";
  * Blob layout is memoized per mood+weather+activity so it doesn't jitter on
  * re-render, but does vary session to session.
  */
-const HELVETICA = Platform.select({ ios: "Helvetica", android: "sans-serif", default: "Helvetica" });
-const HELVETICA_BOLD = Platform.select({ ios: "Helvetica-Bold", android: "sans-serif", default: "Helvetica-Bold" });
+export const HELVETICA = Platform.select({ ios: "Helvetica", android: "sans-serif", default: "Helvetica" });
+export const HELVETICA_BOLD = Platform.select({ ios: "Helvetica-Bold", android: "sans-serif", default: "Helvetica-Bold" });
 
-function moodColor(valence = 0, arousal = 0, jitter = 0) {
+export function moodColor(valence = 0, arousal = 0, jitter = 0) {
   const hue = 205 - ((valence + 1) / 2) * 165 + jitter; // -1 -> ~205 (blue), 1 -> ~40 (warm orange)
   const sat = 35 + ((arousal + 1) / 2) * 50; // calm = muted, energized = vivid
   const light = 42 + ((1 - (arousal + 1) / 2)) * 14; // slightly brighter when calmer
@@ -41,7 +41,7 @@ function hashString(str) {
   return h;
 }
 
-function BlobLayer({ valence, arousal, condition, localHour, seedKey }) {
+export function BlobLayer({ valence, arousal, condition, localHour, seedKey }) {
   const composition = useMemo(() => {
     const rand = seededRandom(hashString(seedKey) || 1);
     const blobCount = 3 + Math.round(((arousal + 1) / 2) * 3); // 3..6 blobs

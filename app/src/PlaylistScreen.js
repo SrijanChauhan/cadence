@@ -8,6 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { captureRef } from "react-native-view-shot";
 import { BACKEND_URL } from "./config";
 import SessionBanner from "./SessionBanner";
+import CoverArt from "./CoverArt";
 import { addToPlaylistHistory } from "./playlistHistory";
 import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
@@ -62,6 +63,7 @@ export default function PlaylistScreen({ traits }) {
   const queueRef = useRef([]);
   const tracksRef = useRef([]);
   const bannerRef = useRef(null);
+  const coverArtRef = useRef(null);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
 
@@ -326,13 +328,29 @@ export default function PlaylistScreen({ traits }) {
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
 
       // best-effort: a failed capture shouldn't block the save, but log why
-      // so a cover-art problem is debuggable instead of just silently absent
+      // so a cover-art problem is debuggable instead of just silently absent.
+      // Captures the dedicated off-screen SQUARE composition (CoverArt), not
+      // the wide on-screen banner — Spotify expects a square cover, and a
+      // rectangular screenshot would just get cropped/letterboxed. Starts at
+      // quality 0.9 (this content is mostly flat color fields, so it usually
+      // compresses well under Spotify's 256KB limit even at high quality),
+      // but device pixel ratio varies (2x-3x), so falls back to progressively
+      // lower quality rather than risk silently exceeding the hard 256KB
+      // limit and failing the whole upload — sharper when it can be, but
+      // never at the cost of the upload just not happening.
       let coverImageBase64 = null;
       try {
-        if (bannerRef.current) {
-          coverImageBase64 = await captureRef(bannerRef, { format: "jpg", quality: 0.6, result: "base64" });
+        if (coverArtRef.current) {
+          const SPOTIFY_MAX_BYTES = 256 * 1024;
+          for (const quality of [0.9, 0.75, 0.6, 0.45]) {
+            const candidate = await captureRef(coverArtRef, { format: "jpg", quality, result: "base64" });
+            const approxBytes = candidate.length * 0.75; // base64 -> raw byte estimate
+            if (approxBytes <= SPOTIFY_MAX_BYTES) { coverImageBase64 = candidate; break; }
+            console.warn(`[cover art] quality ${quality} too large (~${Math.round(approxBytes / 1024)}KB), trying lower`);
+          }
+          if (!coverImageBase64) console.warn("[cover art] no quality level fit under 256KB — skipping cover upload");
         } else {
-          console.warn("[cover art] bannerRef not attached — banner may not be mounted yet");
+          console.warn("[cover art] coverArtRef not attached — CoverArt may not be mounted yet");
         }
       } catch (e) {
         console.warn("[cover art] captureRef failed:", e.message);
@@ -398,6 +416,22 @@ export default function PlaylistScreen({ traits }) {
           activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
           place={place}
         />
+      )}
+
+      {target && (
+        // Off-screen, mounted (not display:none) so captureRef can grab it —
+        // a dedicated square composition for the Spotify cover upload, kept
+        // separate from the wide on-screen banner above. Never visible to
+        // the user; stays in sync with mood/weather/place as they change.
+        <View style={s.coverArtOffscreen} pointerEvents="none">
+          <CoverArt
+            ref={coverArtRef}
+            mood={mood}
+            weather={weather}
+            activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
+            place={place}
+          />
+        </View>
       )}
 
       {target && (
@@ -560,6 +594,7 @@ export default function PlaylistScreen({ traits }) {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000", paddingHorizontal: 22, paddingTop: 4 },
+  coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: "#0A0A0A", borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 12 },
