@@ -100,7 +100,7 @@ function BounceNumber({ value, style }) {
 
 export default function OnboardingScreen({ onComplete, onSkip }) {
   const { theme } = useTheme();
-  const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface), [theme]);
+  const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface, theme.border), [theme]);
   const [screen, setScreen] = useState("intro");
   const [idx, setIdx] = useState(0);
   const [quizItems, setQuizItems] = useState(pickQuizItems);
@@ -270,7 +270,7 @@ function Results({ s, data, onRestart, onComplete }) {
 
 const rounded = Platform.select({ ios: "System", android: "sans-serif-black", default: "System" });
 
-const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
+const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   // Intro's own column: the centered content block takes all remaining
   // space (flex:1), which naturally pushes skipBtn as its sibling down to
@@ -296,7 +296,7 @@ const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   prompt: { color: "#FFF", fontSize: 26, fontWeight: "800", lineHeight: 33, marginBottom: 28, minHeight: 66 },
 
   likertWrap: { gap: 10 },
-  opt: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 15, paddingHorizontal: 22, backgroundColor: SURFACE },
+  opt: { borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 15, paddingHorizontal: 22, backgroundColor: SURFACE },
   optActive: { backgroundColor: VOLT, borderColor: VOLT },
   optLabel: { color: "#DADADA", fontSize: 15, fontWeight: "700" },
   optLabelActive: { color: "#000" },

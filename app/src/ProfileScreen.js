@@ -41,10 +41,10 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
           <PersonalityPlacard traits={traits} />
           <View style={s.actionRow}>
-            <Pressable style={s.recalBtn} onPress={onRecalibrate}>
+            <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={onRecalibrate}>
               <Text style={s.recalBtnText}>Test Again</Text>
             </Pressable>
-            <Pressable style={s.recalBtn} onPress={() => setThemePickerOpen(true)}>
+            <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setThemePickerOpen(true)}>
               <Text style={s.recalBtnText}>Theme</Text>
             </Pressable>
           </View>

@@ -45,7 +45,7 @@ function BounceNumber({ value, style }) {
 
 export default function PlaylistScreen({ traits }) {
   const { theme } = useTheme();
-  const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface), [theme]);
+  const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface, theme.border), [theme]);
   const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -687,13 +687,13 @@ export default function PlaylistScreen({ traits }) {
 // module-level StyleSheet, so switching themes (see ProfileScreen's Theme
 // picker) restyles every screen without touching any of the JSX below —
 // `s` is computed once per theme change via useMemo inside the component.
-const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
+const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   root: { flex: 1, backgroundColor: BG, paddingHorizontal: 22, paddingTop: 4 },
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
   chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 18, marginTop: 10 },
-  chip: { borderRadius: 999, borderWidth: 2, borderColor: "#242424", paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
+  chip: { borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
@@ -710,7 +710,7 @@ const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   error: { color: "#FF5A4E", fontSize: 13.5, fontWeight: "700", marginTop: 14, lineHeight: 19 },
   retry: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 10, paddingHorizontal: 24, alignSelf: "flex-start", marginTop: 10 },
   retryText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
-  diagBox: { backgroundColor: SURFACE, borderRadius: 14, borderWidth: 1, borderColor: "#1C1C1C", padding: 12, marginTop: 12 },
+  diagBox: { backgroundColor: SURFACE, borderRadius: 14, borderWidth: 1, borderColor: BORDER, padding: 12, marginTop: 12 },
   diagLine: { color: "#7A7A7A", fontSize: 11, fontFamily: "Menlo", lineHeight: 16 },
 
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#141414" },
@@ -723,16 +723,16 @@ const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   icon: { color: "#7A7A7A", fontSize: 16, fontWeight: "800" },
   iconVolt: { color: VOLT },
   footnote: { color: "#6E6E6E", fontSize: 11.5, lineHeight: 17, marginTop: 18 },
-  refreshBtn: { borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 13, alignItems: "center", marginTop: 18, marginBottom: 8 },
+  refreshBtn: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 13, alignItems: "center", marginTop: 18, marginBottom: 8 },
   refreshBtnMaxed: { opacity: 0.4 },
   refreshBtnText: { color: "#DADADA", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
-  nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: "#222", flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
+  nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
   nowCover: { width: 44, height: 44, borderRadius: 12 },
   nowTitle: { color: "#FFF", fontSize: 13.5, fontWeight: "800" },
   nowArtist: { color: "#7A7A7A", fontSize: 11, fontWeight: "600", marginTop: 1 },
 
-  queuePanel: { position: "absolute", left: 12, right: 12, bottom: 82, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: "#222", padding: 12 },
+  queuePanel: { position: "absolute", left: 12, right: 12, bottom: 82, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 12 },
   queueHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   queueTitle: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900" },
   queueClose: { color: "#7A7A7A", fontSize: 12, fontWeight: "700" },
@@ -747,16 +747,16 @@ const buildStyles = (VOLT, BG, SURFACE) => StyleSheet.create({
   qArtist: { color: "#7A7A7A", fontSize: 11, marginTop: 1 },
 
   moodOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000000E6", justifyContent: "center", paddingHorizontal: 24 },
-  moodCard: { backgroundColor: SURFACE, borderRadius: 22, borderWidth: 1, borderColor: "#242424", padding: 22 },
+  moodCard: { backgroundColor: SURFACE, borderRadius: 22, borderWidth: 1, borderColor: BORDER, padding: 22 },
   moodKicker: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 10 },
   moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 6 },
   moodSub: { color: "#8A8A8A", fontSize: 12, lineHeight: 17, marginBottom: 16 },
   bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  bubble: { borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 9, paddingHorizontal: 16, backgroundColor: SURFACE },
+  bubble: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, paddingHorizontal: 16, backgroundColor: SURFACE },
   bubbleActive: { backgroundColor: VOLT, borderColor: VOLT },
   bubbleText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
   bubbleTextActive: { color: "#000" },
-  moodInput: { backgroundColor: "#000", borderRadius: 14, borderWidth: 1, borderColor: "#242424", color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginBottom: 16 },
+  moodInput: { backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: BORDER, color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginBottom: 16 },
   moodGo: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
   moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
   moodSkip: { color: "#7A7A7A", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
