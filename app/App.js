@@ -84,7 +84,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#000" },
-  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", paddingHorizontal: 24, paddingTop: 14, paddingBottom: 12 },
+  // paddingHorizontal must match PlaylistScreen's root (22) so CADENCE lines
+  // up with "PICK A MODE" and the activity chips directly below it
+  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", paddingHorizontal: 22, paddingTop: 14, paddingBottom: 12 },
   wordmark: { color: "#FFF", fontWeight: "900", letterSpacing: 5, fontSize: 14 },
   profileLink: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
 });

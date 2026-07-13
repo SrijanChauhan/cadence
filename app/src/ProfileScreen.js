@@ -20,11 +20,17 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
   return (
     <View style={s.overlay}>
       <View style={s.header}>
-        <Pressable onPress={selected ? () => setSelected(null) : onClose} hitSlop={12}>
+        <Pressable onPress={selected ? () => setSelected(null) : onClose} hitSlop={12} style={s.headerBackBtn}>
           <Text style={s.headerBack}>{selected ? "← Back" : "Close"}</Text>
         </Pressable>
-        <Text style={s.headerTitle}>{selected ? "PLAYLIST" : "PROFILE"}</Text>
-        <View style={{ width: 50 }} />
+        {/* Absolutely positioned + centered on the FULL header width, not
+            balanced via a fixed-width spacer against a variable-width back
+            button — that approach only optically centers when the left and
+            right elements happen to be the same width, which "Close" vs
+            "← Back" never are, hence the title reading as off-center. */}
+        <View style={s.headerTitleWrap} pointerEvents="none">
+          <Text style={s.headerTitle}>{selected ? "PLAYLIST" : "PROFILE"}</Text>
+        </View>
       </View>
 
       {selected ? (
@@ -90,8 +96,12 @@ function PlaylistDetail({ record }) {
 
 const s = StyleSheet.create({
   overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000", zIndex: 10 },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 54, paddingBottom: 16 },
-  headerBack: { color: "#9A9A9A", fontSize: 13, fontWeight: "700", width: 50 },
+  // paddingHorizontal matches body (22) so Close/Back lines up with the
+  // content below it; position:relative anchors the absolutely-centered title
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 54, paddingBottom: 16, position: "relative" },
+  headerBackBtn: { zIndex: 1 },
+  headerBack: { color: "#9A9A9A", fontSize: 13, fontWeight: "700" },
+  headerTitleWrap: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: "#FFF", fontSize: 12, fontWeight: "900", letterSpacing: 3 },
 
   body: { paddingHorizontal: 22, paddingBottom: 60 },

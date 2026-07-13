@@ -545,6 +545,15 @@ export default function PlaylistScreen({ traits }) {
           Favourite queues a track. Remove swaps in a fresh one automatically. Tap the queue icon in the bar below to see the queue and save it.
         </Text>
       )}
+
+      {activity && tracks.length > 0 && (
+        // Re-fetches this activity's pool from scratch. Deliberately does NOT
+        // touch myPicks — that store is fully decoupled from `tracks`/`feedback`
+        // (see like()/addToMyPicks), so a refresh has nothing to reset there.
+        <Pressable style={s.refreshBtn} onPress={() => load(activity)} disabled={loading}>
+          <Text style={s.refreshBtnText}>{loading ? "REFRESHING…" : "REFRESH PLAYLIST"}</Text>
+        </Pressable>
+      )}
     </ScrollView>
 
     {queueTracks.length > 0 && queueOpen && (
@@ -676,6 +685,8 @@ const s = StyleSheet.create({
   icon: { color: "#7A7A7A", fontSize: 16, fontWeight: "800" },
   iconVolt: { color: VOLT },
   footnote: { color: "#6E6E6E", fontSize: 11.5, lineHeight: 17, marginTop: 18 },
+  refreshBtn: { borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 13, alignItems: "center", marginTop: 18, marginBottom: 8 },
+  refreshBtnText: { color: "#DADADA", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
   nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: "#111", borderRadius: 20, borderWidth: 1, borderColor: "#222", flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
   nowCover: { width: 44, height: 44, borderRadius: 12 },
