@@ -84,9 +84,16 @@ function isStockMusic(track) {
 export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20, excludeIds = [], onDiag = () => {} }) {
   const terms = seedPool && seedPool.length ? seedPool : [undefined];
   const excludeSet = new Set(excludeIds);
-  // fetch extra headroom when excluding, since a chunk of each term's
-  // results may get filtered straight back out as already-seen
-  const perTerm = Math.max(6, Math.ceil((limit * (excludeSet.size ? 2.5 : 1.5)) / terms.length));
+  // iTunes search is deterministic — same term + same limit always returns
+  // the same top-N results in the same order, there's no offset param. So a
+  // FIXED perTerm doesn't just need "extra headroom" once; it needs to grow
+  // with excludeSet.size every call, or repeated refreshes fetch the exact
+  // same top slice each time and an ever-larger fraction of it gets filtered
+  // out as already-seen, shrinking the surviving pool refresh over refresh.
+  // Scaling by excludeSet.size reaches deeper into each term's ranked
+  // results as more tracks accumulate as "seen", so fresh ones keep surfacing.
+  // Capped at 200, the documented max for iTunes's `limit` parameter.
+  const perTerm = Math.min(200, Math.max(6, Math.ceil((limit * 1.5 + excludeSet.size) / terms.length)));
 
   const [first, ...rest] = terms;
   const results = [await searchTracks({ seedTerms: first, bpmMin, bpmMax, limit: perTerm, onDiag })];
