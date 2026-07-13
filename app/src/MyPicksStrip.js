@@ -8,8 +8,18 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
  * Three gestures share one touch, disambiguated by TIME then MOVEMENT:
  *   - released quickly (< ~300ms), barely moved  -> tap  -> open in Apple Music
  *   - held past the long-press threshold (350ms), then released without
- *     moving far -> hold-still -> shows a remove confirmation
+ *     moving far -> hold-still -> shows an X directly on the album art
  *   - held past the threshold, then moved         -> drag -> reorders picks
+ *
+ * The remove X is measured to the tile's actual on-screen position and
+ * rendered in a transparent, chrome-less Modal at those exact coordinates —
+ * not a card/dialog. Modal is used purely as a rendering mechanism (RN
+ * stacking rules mean a plain in-place overlay can't reliably sit above a
+ * separate full-screen dismiss layer, since zIndex only orders siblings
+ * sharing the same parent, not a deeply-nested tile against a layer several
+ * levels up), not as a visible "dialog box" — there is no card, no text, no
+ * backdrop dimming, just the X floating over the art plus an invisible
+ * full-screen tap-outside-to-dismiss layer.
  *
  * Built on react-native-gesture-handler (confirmed bundled in Expo Go, no
  * dev-build risk) using its plain-JS-callback Gesture API rather than
@@ -31,8 +41,10 @@ const TILE_GAP = 10;
 const TILE_STRIDE = TILE_WIDTH + TILE_GAP;
 const LONG_PRESS_MS = 350;
 const MOVE_THRESHOLD = 14; // px of net movement below which a hold-then-release counts as "held still"
+const X_SIZE = 40;
 
 function PickTile({ track, index, total, onOpenApple, onReorder, onHoldStill }) {
+  const tileRef = useRef(null);
   const translateX = useRef(new Animated.Value(0)).current;
   const [dragging, setDragging] = useState(false);
 
@@ -43,7 +55,11 @@ function PickTile({ track, index, total, onOpenApple, onReorder, onHoldStill }) 
     .onEnd((e) => {
       const dx = e.translationX;
       if (Math.abs(dx) < MOVE_THRESHOLD) {
-        onHoldStill(track);
+        // measure the ALREADY-RENDERED tile (not the cover specifically —
+        // same width/position) so the X can be placed exactly over the art
+        tileRef.current?.measureInWindow((x, y, width) => {
+          onHoldStill(track, { x, y, width });
+        });
       } else {
         const indexDelta = Math.round(dx / TILE_STRIDE);
         const newIndex = Math.max(0, Math.min(total - 1, index + indexDelta));
@@ -66,7 +82,7 @@ function PickTile({ track, index, total, onOpenApple, onReorder, onHoldStill }) 
 
   return (
     <GestureDetector gesture={gesture}>
-      <Animated.View style={[s.pick, { transform: [{ translateX }], zIndex: dragging ? 10 : 0 }]}>
+      <Animated.View ref={tileRef} style={[s.pick, { transform: [{ translateX }], zIndex: dragging ? 10 : 0 }]}>
         {track.cover ? <Image source={{ uri: track.cover }} style={s.pickCover} /> : <View style={[s.pickCover, s.coverEmpty]} />}
         <Text style={s.pickTitle} numberOfLines={1}>{track.title}</Text>
       </Animated.View>
@@ -75,9 +91,12 @@ function PickTile({ track, index, total, onOpenApple, onReorder, onHoldStill }) 
 }
 
 export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }) {
-  const [confirmTrack, setConfirmTrack] = useState(null);
+  // { id, x, y, width } of the tile currently showing the remove X, or null
+  const [confirm, setConfirm] = useState(null);
 
   if (picks.length === 0) return null;
+
+  const handleHoldStill = (track, rect) => setConfirm({ id: track.id, ...rect });
 
   return (
     <View style={s.wrap}>
@@ -92,32 +111,22 @@ export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }
             total={picks.length}
             onOpenApple={onOpenApple}
             onReorder={onReorder}
-            onHoldStill={setConfirmTrack}
+            onHoldStill={handleHoldStill}
           />
         ))}
       </ScrollView>
 
-      {/* Modal (not an on-tile overlay) so "tap outside dismisses" is exact
-          and reliable regardless of where the tile has scrolled to — no
-          fragile z-index/position math against a horizontally-scrolling
-          sibling. The backdrop Pressable is the "outside" target; the card
-          itself stops propagation by being its own Pressable underneath. */}
-      <Modal transparent visible={!!confirmTrack} animationType="fade" onRequestClose={() => setConfirmTrack(null)}>
-        <Pressable style={s.backdrop} onPress={() => setConfirmTrack(null)}>
-          <Pressable style={s.confirmCard} onPress={() => {}}>
-            {confirmTrack?.cover ? <Image source={{ uri: confirmTrack.cover }} style={s.confirmCover} /> : null}
-            <Text style={s.confirmTitle} numberOfLines={1}>{confirmTrack?.title}</Text>
-            <Text style={s.confirmArtist} numberOfLines={1}>{confirmTrack?.artist}</Text>
+      <Modal transparent visible={!!confirm} animationType="none" onRequestClose={() => setConfirm(null)}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setConfirm(null)}>
+          {confirm && (
             <Pressable
-              style={s.confirmRemoveBtn}
-              onPress={() => { onRemove(confirmTrack.id); setConfirmTrack(null); }}
-              hitSlop={10}
+              style={[s.removeX, { left: confirm.x + confirm.width / 2 - X_SIZE / 2, top: confirm.y + confirm.width / 2 - X_SIZE / 2 }]}
+              onPress={() => { onRemove(confirm.id); setConfirm(null); }}
+              hitSlop={8}
             >
-              <Text style={s.confirmRemoveIcon}>✕</Text>
+              <Text style={s.removeXIcon}>✕</Text>
             </Pressable>
-            <Text style={s.confirmSub}>Remove from My Picks</Text>
-            <Text style={s.confirmHint}>Tap outside to cancel</Text>
-          </Pressable>
+          )}
         </Pressable>
       </Modal>
     </View>
@@ -134,13 +143,10 @@ const s = StyleSheet.create({
   coverEmpty: { backgroundColor: "#141414" },
   pickTitle: { color: "#BABABA", fontSize: 10.5, fontWeight: "700" },
 
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", paddingHorizontal: 40 },
-  confirmCard: { backgroundColor: "#111", borderRadius: 22, borderWidth: 1, borderColor: "#242424", padding: 22, alignItems: "center", width: "100%" },
-  confirmCover: { width: 72, height: 72, borderRadius: 16, marginBottom: 12 },
-  confirmTitle: { color: "#FFF", fontSize: 15, fontWeight: "800", marginBottom: 2, maxWidth: 220 },
-  confirmArtist: { color: "#8A8A8A", fontSize: 12.5, fontWeight: "600", marginBottom: 18, maxWidth: 220 },
-  confirmRemoveBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: "#2A0E0E", borderWidth: 1.5, borderColor: "#FF5A4E", alignItems: "center", justifyContent: "center", marginBottom: 10 },
-  confirmRemoveIcon: { color: "#FF5A4E", fontSize: 20, fontWeight: "900" },
-  confirmSub: { color: "#DADADA", fontSize: 12.5, fontWeight: "700" },
-  confirmHint: { color: "#5A5A5A", fontSize: 11, marginTop: 10 },
+  removeX: {
+    position: "absolute", width: X_SIZE, height: X_SIZE, borderRadius: X_SIZE / 2,
+    backgroundColor: "rgba(0,0,0,0.55)", borderWidth: 1.5, borderColor: "#FF5A4E",
+    alignItems: "center", justifyContent: "center",
+  },
+  removeXIcon: { color: "#FF5A4E", fontSize: 18, fontWeight: "900" },
 });
