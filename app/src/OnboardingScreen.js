@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, ScrollView, StyleSheet, Animated, Easing, Platform,
 } from "react-native";
 import { useTheme } from "./theme";
+import { TRAITS, DESC, bucket } from "./traits";
 
 /**
  * Cadence — Onboarding (Bounce edition)
@@ -11,14 +12,6 @@ import { useTheme } from "./theme";
  * taker only sees 10 of its 20 items (see pickQuizItems) — one regular and
  * one reverse-scored item per trait, randomly chosen and randomly ordered.
  */
-
-const TRAITS = [
-  { key: "O", name: "Openness", sub: "imagination · variety" },
-  { key: "C", name: "Conscientiousness", sub: "order · follow-through" },
-  { key: "E", name: "Extraversion", sub: "energy · sociability" },
-  { key: "A", name: "Agreeableness", sub: "warmth · cooperation" },
-  { key: "N", name: "Neuroticism", sub: "emotional sensitivity" },
-];
 
 const ITEMS = [
   { t: "I am the life of the party.", trait: "E", rev: false },
@@ -74,16 +67,6 @@ const LIKERT = [
   { v: 4, label: "Agree" },
   { v: 5, label: "Strongly agree" },
 ];
-
-const DESC = {
-  O: { hi: "Drawn to novelty, texture, the unfamiliar.", mid: "Open to new sounds, anchored by favorites.", lo: "Prefers the familiar and the proven." },
-  C: { hi: "Structured; likes order and clean momentum.", mid: "Balances routine with room to drift.", lo: "Spontaneous; goes where the moment leads." },
-  E: { hi: "Energized by people and forward motion.", mid: "Comfortable in company or solitude.", lo: "Recharges in quieter, low-key settings." },
-  A: { hi: "Tuned into others; warm and cooperative.", mid: "Considerate, with a mind of your own.", lo: "Direct, skeptical, independent-minded." },
-  N: { hi: "Feels things intensely; moods shift.", mid: "Steady, with the occasional swing.", lo: "Even-keeled and hard to rattle." },
-};
-
-const bucket = (p) => (p >= 60 ? "hi" : p <= 40 ? "lo" : "mid");
 
 /** A number that bounces in with spring physics whenever its value changes. */
 function BounceNumber({ value, style }) {
@@ -157,7 +140,7 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
     <View style={s.root}>
       {screen === "intro" && <Intro s={s} onStart={() => setScreen("quiz")} onSkip={onSkip} />}
       {screen === "quiz" && (
-        <Quiz s={s} idx={idx} items={quizItems} answers={answers} onAnswer={answer} onBack={back} />
+        <Quiz s={s} idx={idx} items={quizItems} answers={answers} onAnswer={answer} onBack={back} onSkip={onSkip} />
       )}
       {screen === "results" && <Results s={s} data={scores()} onRestart={restart} onComplete={onComplete} />}
     </View>
@@ -188,10 +171,15 @@ function Intro({ s, onStart, onSkip }) {
   );
 }
 
-function Quiz({ s, idx, items, answers, onAnswer, onBack }) {
+function Quiz({ s, idx, items, answers, onAnswer, onBack, onSkip }) {
   const item = items[idx];
   return (
     <View style={s.quizWrap}>
+      {onSkip && (
+        <Pressable style={s.quizSkipBtn} onPress={onSkip} hitSlop={12}>
+          <Text style={s.skipBtnText}>Skip</Text>
+        </Pressable>
+      )}
       {/* Counter/prompt/answers centered in the remaining space (same
           flex:1 + justifyContent:"center" pattern Intro already uses) so
           the answers sit in the middle of the screen instead of stacking
@@ -296,6 +284,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   skipBtnText: { color: "#6E6E6E", fontSize: 13, fontWeight: "700" },
 
   quizWrap: { flex: 1, paddingHorizontal: 26, paddingTop: 18, paddingBottom: 20 },
+  quizSkipBtn: { position: "absolute", top: 18, right: 26, paddingVertical: 6, paddingHorizontal: 4, zIndex: 1 },
   quizCenter: { flex: 1, justifyContent: "center" },
   counterRow: { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },
   counter: { color: VOLT, fontSize: 84, fontWeight: "900", fontFamily: rounded, letterSpacing: -3 },

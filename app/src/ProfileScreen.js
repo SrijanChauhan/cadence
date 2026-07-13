@@ -3,27 +3,36 @@ import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator
 import { Audio } from "expo-av";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
+import TraitGraph from "./TraitGraph";
 import { THEMES, useTheme } from "./theme";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
   const { theme, themeId, setTheme } = useTheme();
   const [history, setHistory] = useState(null); // null = loading
   const [selected, setSelected] = useState(null); // a history record, or null for list view
+  const [personalityOpen, setPersonalityOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setSelected(null);
+    setPersonalityOpen(false);
     getPlaylistHistory().then(setHistory);
   }, [visible]);
 
   if (!visible) return null;
 
+  const goBack = () => {
+    if (selected) setSelected(null);
+    else if (personalityOpen) setPersonalityOpen(false);
+    else onClose();
+  };
+
   return (
     <View style={[s.overlay, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
-        <Pressable onPress={selected ? () => setSelected(null) : onClose} hitSlop={12} style={s.headerBackBtn}>
-          <Text style={s.headerBack}>{selected ? "← Back" : "Close"}</Text>
+        <Pressable onPress={goBack} hitSlop={12} style={s.headerBackBtn}>
+          <Text style={s.headerBack}>{selected || personalityOpen ? "← Back" : "Close"}</Text>
         </Pressable>
         {/* Absolutely positioned + centered on the FULL header width, not
             balanced via a fixed-width spacer against a variable-width back
@@ -31,15 +40,24 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             right elements happen to be the same width, which "Close" vs
             "← Back" never are, hence the title reading as off-center. */}
         <View style={s.headerTitleWrap} pointerEvents="none">
-          <Text style={s.headerTitle}>{selected ? "PLAYLIST" : "PROFILE"}</Text>
+          <Text style={s.headerTitle}>{selected ? "PLAYLIST" : personalityOpen ? "PERSONALITY" : "PROFILE"}</Text>
         </View>
       </View>
 
       {selected ? (
         <PlaylistDetail record={selected} />
+      ) : personalityOpen ? (
+        <PersonalityDetail
+          traits={traits}
+          theme={theme}
+          onGoProfile={() => setPersonalityOpen(false)}
+          onGoPlaylist={onClose}
+        />
       ) : (
         <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
-          <PersonalityPlacard traits={traits} />
+          <Pressable onPress={() => setPersonalityOpen(true)}>
+            <PersonalityPlacard traits={traits} />
+          </Pressable>
           <View style={s.actionRow}>
             <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={onRecalibrate}>
               <Text style={s.recalBtnText}>Test Again</Text>
@@ -94,6 +112,24 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
         </Pressable>
       </Modal>
     </View>
+  );
+}
+
+function PersonalityDetail({ traits, theme, onGoProfile, onGoPlaylist }) {
+  return (
+    <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+      <Text style={s.detailName}>Your OCEAN Profile</Text>
+      <Text style={s.detailStory}>The Big Five breakdown from your last test, same as right after you took it.</Text>
+      <TraitGraph traits={traits} accent={theme.accent} surface={theme.surface} />
+      <View style={[s.actionRow, { marginTop: 28 }]}>
+        <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={onGoProfile}>
+          <Text style={s.recalBtnText}>Back to Profile</Text>
+        </Pressable>
+        <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={onGoPlaylist}>
+          <Text style={s.recalBtnText}>Go to Playlists</Text>
+        </Pressable>
+      </View>
+    </ScrollView>
   );
 }
 
