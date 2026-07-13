@@ -57,6 +57,16 @@ export default function PlaylistScreen({ traits }) {
   const [feedback, setFeedback] = useState({});
   const [queue, setQueue] = useState([]);
   const [queueOpen, setQueueOpen] = useState(false);
+  // My Picks: a persistent, activity-independent set of favourited tracks —
+  // deliberately NOT derived from `feedback`, since feedback[id] gets
+  // overwritten by whatever the latest event was (a liked track that later
+  // completes or gets skipped would otherwise silently drop out of picks),
+  // and NOT derived from the current `tracks` list, since that resets on
+  // every activity switch. Stores full track snapshots (not just ids) so a
+  // pick still renders correctly even when it is not in the currently
+  // loaded activity's results.
+  const [myPicks, setMyPicks] = useState([]);
+  const myPicksLoaded = useRef(false);
   const buckets = useRef({});
   const sound = useRef(null);
   const playStart = useRef(null);
@@ -86,8 +96,19 @@ export default function PlaylistScreen({ traits }) {
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
     restoreSpotifySession().then(() => setSpotifyConnected(hasSpotifyAuth())); // silently reconnect if we have a saved refresh token
+    AsyncStorage.getItem("cadence:myPicks")
+      .then((raw) => { if (raw) setMyPicks(JSON.parse(raw)); })
+      .catch(() => {})
+      .finally(() => { myPicksLoaded.current = true; });
     return () => { sound.current?.unloadAsync(); };
   }, []);
+
+  // persist on every change, but not before the initial load above has run —
+  // otherwise the empty initial state would overwrite a previously saved list
+  useEffect(() => {
+    if (!myPicksLoaded.current) return;
+    AsyncStorage.setItem("cadence:myPicks", JSON.stringify(myPicks)).catch(() => {});
+  }, [myPicks]);
 
   const connectSpotifyNow = async () => {
     setConnectingSpotify(true);
@@ -251,7 +272,21 @@ export default function PlaylistScreen({ traits }) {
     setTracks((ts) => rankTracks(ts, buckets.current[activity]));
   };
 
-  const like = (track) => { giveFeedback(track, "like"); enqueue(track); };
+  const addToMyPicks = (track) => {
+    setMyPicks((ps) => (ps.some((p) => p.id === track.id) ? ps : [...ps, track]));
+  };
+  const removeFromMyPicks = (id) => setMyPicks((ps) => ps.filter((p) => p.id !== id));
+  const isMyPick = (id) => myPicks.some((p) => p.id === id);
+
+  const like = (track) => { giveFeedback(track, "like"); enqueue(track); addToMyPicks(track); };
+
+  // heart is a toggle: tap again to un-favourite, which also drops it from
+  // the auto-play queue it was added to (a track that is no longer "picked"
+  // should not still be lined up to play next)
+  const toggleLike = (track) => {
+    if (isMyPick(track.id)) { removeFromMyPicks(track.id); dequeue(track.id); }
+    else like(track);
+  };
 
   const removeTrack = (track) => {
     dequeue(track.id);
@@ -380,7 +415,6 @@ export default function PlaylistScreen({ traits }) {
   };
 
   const post = activity && buckets.current[activity] ? posterior(buckets.current[activity]) : null;
-  const picks = tracks.filter((t) => feedback[t.id] === "like" || feedback[t.id] === "save");
   const nowPlaying = tracks.find((t) => t.id === playingId);
   const queueTracks = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
   const upNext = (() => {
@@ -449,15 +483,20 @@ export default function PlaylistScreen({ traits }) {
         </View>
       )}
 
-      {picks.length > 0 && (
+      {myPicks.length > 0 && (
         <View style={s.picksWrap}>
-          <Text style={s.picksTitle}>SESSION PICKS · {picks.length}</Text>
+          <Text style={s.picksTitle}>MY PICKS · {myPicks.length}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {picks.map((t) => (
-              <Pressable key={t.id} onPress={() => openApple(t)} style={s.pick}>
-                {t.cover ? <Image source={{ uri: t.cover }} style={s.pickCover} /> : <View style={[s.pickCover, s.coverEmpty]} />}
-                <Text style={s.pickTitle} numberOfLines={1}>{t.title}</Text>
-              </Pressable>
+            {myPicks.map((t) => (
+              <View key={t.id} style={s.pick}>
+                <Pressable onPress={() => openApple(t)}>
+                  {t.cover ? <Image source={{ uri: t.cover }} style={s.pickCover} /> : <View style={[s.pickCover, s.coverEmpty]} />}
+                  <Text style={s.pickTitle} numberOfLines={1}>{t.title}</Text>
+                </Pressable>
+                <Pressable style={s.pickRemove} onPress={() => removeFromMyPicks(t.id)} hitSlop={8}>
+                  <Text style={s.pickRemoveText}>{"✕"}</Text>
+                </Pressable>
+              </View>
             ))}
           </ScrollView>
         </View>
@@ -491,8 +530,8 @@ export default function PlaylistScreen({ traits }) {
             <Pressable style={s.iconBtn} onPress={() => play(t)}>
               <Text style={[s.icon, playingId === t.id && s.iconVolt]}>{playingId === t.id ? "\u275a\u275a" : "\u25b6"}</Text>
             </Pressable>
-            <Pressable style={s.iconBtn} onPress={() => like(t)}>
-              <Text style={[s.icon, fb === "like" && s.iconVolt]}>{"\u2665"}</Text>
+            <Pressable style={s.iconBtn} onPress={() => toggleLike(t)}>
+              <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"\u2665"}</Text>
             </Pressable>
             <Pressable style={s.iconBtn} onPress={() => removeTrack(t)}>
               <Text style={s.icon}>{"\u2715"}</Text>
@@ -614,9 +653,11 @@ const s = StyleSheet.create({
 
   picksWrap: { marginBottom: 14 },
   picksTitle: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 8 },
-  pick: { width: 84, marginRight: 10 },
+  pick: { width: 84, marginRight: 10, position: "relative" },
   pickCover: { width: 84, height: 84, borderRadius: 14, marginBottom: 4 },
   pickTitle: { color: "#BABABA", fontSize: 10.5, fontWeight: "700" },
+  pickRemove: { position: "absolute", top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: "#1A1A1A", borderWidth: 1, borderColor: "#333", alignItems: "center", justifyContent: "center" },
+  pickRemoveText: { color: "#DADADA", fontSize: 11, fontWeight: "900" },
 
   loadingNote: { color: "#6E6E6E", fontSize: 11.5, marginTop: 8, fontWeight: "600" },
   error: { color: "#FF5A4E", fontSize: 13.5, fontWeight: "700", marginTop: 14, lineHeight: 19 },
