@@ -12,6 +12,34 @@ Working prototype: Expo app (physical phone via Expo Go) + a small Express backe
 - Refresh Playlist (re-pull fresh tracks for the same mode, capped at 10 refreshes/session) and four selectable colour themes: working.
 - Full-song playback *inside* the app, and background/lock-screen playback controls: need a dev build — see `app/V3-ACTION-PLAN.md`.
 
+## Full functional flow
+
+What actually happens, screen by screen, from opening the app to saving a playlist:
+
+### 1. Launch
+A brief branded title card (front page) shows for about two seconds on every launch, then the app checks whether a personality profile is already saved on-device. First time ever, or after "Test Again," it goes to onboarding; otherwise it goes straight to the main playlist screen.
+
+### 2. Onboarding (first launch, or after "Test Again")
+- An intro screen explains the quiz takes about a minute, with a **Start** button and a **Skip** link (skipping saves a neutral personality profile and jumps straight into the main app — the recommendation engine still works fine, just driven by activity/mood/weather instead of personality).
+- The quiz itself is 10 yes/no-style prompts ("I am the life of the party," etc.), one at a time, answered on a 5-point agree/disagree scale. Which 10 prompts you get, and their order, is randomized per person. A **Skip** button stays available in the corner throughout, and **Back** steps to the previous question (or back to the intro screen from question 1) at any point.
+- After the last question, a results screen shows your Big Five (OCEAN) breakdown as a bar graph with a short description per trait, plus a **Build My Playlists** button that saves the profile and moves into the main app.
+
+### 3. Main playlist screen
+- A row of activity chips at the top (Deep Work, Calls, Creative, Commute, Workout, Wind-down) — tapping one starts a session.
+- The first pick each session (session = until you force-close the app) prompts for **mood**: multi-select feeling bubbles plus an optional free-text box, then **Build My Playlist**. This mood reading, plus your device's local weather and time of day, nudges the target tempo alongside your personality.
+- The app then shows a generated "session banner" (an abstract art piece colored by your mood, with the date/time/weather/place underneath) and a track feed — a ranked list of real tracks in your target BPM range. Tapping a track plays a 30-second preview; tapping the heart favourites it (adding it to both the session's queue and the persistent "My Picks" catalog); tapping the ✕ removes it and swaps in a fresh one from a held-back reserve pool, no extra network call needed.
+- Every skip/like/completion you make live-adjusts a Bayesian blend between your personality-driven starting tempo and what you're actually responding to — the "% Personality" number shown on screen drops as your own feedback outweighs the initial guess.
+- **Refresh Playlist** re-pulls a new batch of tracks for the same activity/mood, excluding everything already shown this session (capped at 10 refreshes).
+- **My Picks**, a horizontal strip below the feed, holds every track you've ever favourited across all activities and refreshes this session — not just the current one. Tap a pick to open it in Apple Music; hold and drag to reorder; hold still to reveal a ✕ directly on the album art, tap it to remove. A **Save My Picks to Spotify** button turns the whole catalog into a real playlist whenever you're ready, independent of whatever activity is currently open.
+- The current session's queue (favourited tracks for *this* activity) can also be saved on its own via the queue panel — tap the queue icon in the bottom bar, then **Save Queue to Spotify**.
+- Either save flow: connects Spotify if you haven't already (PKCE OAuth, opens Spotify's own sign-in), matches each track to Spotify by title/artist, creates a private playlist named after the activity + mood (e.g. "Cadence — Deep Work, Energetic"), writes a description narrating when/where/what the weather was/what tempo it's tuned to, and uploads a generated square cover image matching the session banner's art.
+
+### 4. Profile screen
+Reached via the "Profile" link in the top bar.
+- A personality placard at the top — tap it to see the full OCEAN bar-graph breakdown again, with buttons to go back to Profile or straight to the playlist screen.
+- **Test Again** retakes the quiz from scratch. **Theme** opens a picker with four colour themes (Black Bolt, Pink, Cyan, Purple), applied instantly and remembered across launches.
+- Below that, **Your Playlists** lists every playlist you've saved to Spotify from this device, most recent first. Tapping one shows its full track list (each still playable as a 30s preview) and a link to open it directly in Spotify.
+
 ## How it works
 1. **Assessment (optional)** — a randomized 10-item Big Five short form (drawn from a Mini-IPIP-style 20-item pool: one regular + one reverse-scored item per trait, both which pair and their order randomized per test taker) → normalized OCEAN vector. Skip is available both before starting and mid-quiz, saving a neutral vector instead, which mathematically produces zero personality-driven shift in the seed engine — the playlist is then driven by activity + mood + weather + time alone. The OCEAN bar-graph breakdown is viewable again any time by tapping the personality placard in Profile.
 2. **Mood** — a one-time-per-session prompt (multi-select bubbles + free text) analyzed on the backend via a hand-built valence/arousal lexicon (circumplex model of affect), with negation handling.
