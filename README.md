@@ -70,6 +70,22 @@ flowchart LR
 The client (Expo app) is the hub: it runs the quiz and re-ranking on-device, calls the backend for track discovery, and talks to Spotify/Apple Music directly for playback and saving — the backend never touches your Spotify account or the tracks you actually play, only the search/rank pipeline.
 
 ## How it works
+
+```mermaid
+flowchart TD
+  A["1 . assessment optional<br/>10 randomized big five prompts to ocean vector"] --> D
+  B["2 . mood<br/>bubbles + free text to valence/arousal"] --> D
+  C["3 . weather + place<br/>open-meteo + bigdatacloud, free"] --> D
+  D["4 . seed engine<br/>traits x activity x mood/weather to bpm band + seed pool"] --> E
+  E["5 . cross-genre discovery<br/>itunes search + your real spotify artists + last.fm similar,<br/>junk filtered, apple music verified"] --> F
+  F["6 . re-ranking, bayesian, on-device<br/>skips/likes/completions shift weight from personality prior to your behavior, live"]
+  F -. "7 . refresh: exclude everything already shown" .-> E
+  F --> G["8 . my picks + save<br/>favourited tracks accumulate across activities,<br/>saved to spotify anytime"]
+
+  classDef box fill:#141414,stroke:#333,color:#eee;
+  class A,B,C,D,E,F,G box;
+```
+
 1. **Assessment (optional)** — a randomized 10-item Big Five short form (drawn from a Mini-IPIP-style 20-item pool: one regular + one reverse-scored item per trait, both which pair and their order randomized per test taker) → normalized OCEAN vector. Skip is available both before starting and mid-quiz, saving a neutral vector instead, which mathematically produces zero personality-driven shift in the seed engine — the playlist is then driven by activity + mood + weather + time alone. The OCEAN bar-graph breakdown is viewable again any time by tapping the personality placard in Profile.
 2. **Mood** — a one-time-per-session prompt (multi-select bubbles + free text) analyzed on the backend via a hand-built valence/arousal lexicon (circumplex model of affect), with negation handling.
 3. **Weather + place** — given device location, the backend pulls current conditions (Open-Meteo, free/no-key) and a human place name (BigDataCloud reverse geocoding, free/no-key), both folding into the tempo nudge and the playlist's story.
@@ -78,7 +94,7 @@ The client (Expo app) is the hub: it runs the quiz and re-ranking on-device, cal
 6. **Re-ranking** — a confidence-weighted Bayesian blend (stays on-device — it's just re-sorting already-downloaded tracks, no need for a network round trip) shifts weight from the personality prior to observed behaviour as feedback accumulates; the current prior weight (λ) is shown live. See `docs/technical-appendix-bayesian-blending.md`.
 7. **Refresh** — re-pulls a fresh batch for the same mode, excluding every track already shown this session so it doesn't just re-serve the same results (iTunes search ranking is deterministic); capped at 10 refreshes per session.
 8. **My Picks + save** — favourited tracks accumulate into a persistent, cross-activity/cross-refresh catalog (independent of whichever single activity's queue is open), reorderable by drag, removable via a tap-and-hold X shown directly on the album art. One tap creates a real Spotify playlist via PKCE auth — either from the current session's queue or from the whole My Picks catalog — named e.g. `Cadence — Deep Work, Energetic`, with a description narrating when/where/how it was made and a generated cover image.
-9. **Themes** — four selectable colour themes (Black Bolt plus Pink/Cyan/Purple, each paired with a true complementary accent), persisted across launches and applied app-wide via a React context.
+9. **Themes** — four selectable colour themes (Black Bolt plus Pink/Cyan/Purple, each paired with a true complementary accent), persisted across launches and applied app-wide via a React context. Not part of the recommendation pipeline above — a standalone on-device UI preference.
 
 ## Repo layout
 - `app/` — the Expo / React Native client
