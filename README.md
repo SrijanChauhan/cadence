@@ -40,6 +40,35 @@ Reached via the "Profile" link in the top bar.
 - **Test Again** retakes the quiz from scratch. **Theme** opens a picker with four colour themes (Black Bolt, Pink, Cyan, Purple), applied instantly and remembered across launches.
 - Below that, **Your Playlists** lists every playlist you've saved to Spotify from this device, most recent first. Tapping one shows its full track list (each still playable as a 30s preview) and a link to open it directly in Spotify.
 
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  you(["You · iPhone<br/>Cadence app (Expo Go)"])
+
+  subgraph backend["cadence backend · express (render)"]
+    direction LR
+    core["seed + mood + weather engine<br/>traits x activity x mood/weather to bpm band"]
+    music["music provider<br/>itunes search + apple music verify"]
+    core --> music
+  end
+
+  you == "POST /recommend<br/>traits, activity, mood, gps" ==> core
+
+  music -. "similar artists" .-> lastfm["last.fm"]
+  music -. "bpm, weather, place fill-in" .-> free["open-meteo, bigdatacloud,<br/>getsongbpm"]
+
+  you -- "oauth pkce + playlist save" --> spotify["spotify"]
+  you -- "deep link" --> apple["apple music"]
+
+  classDef box fill:#141414,stroke:#333,color:#eee;
+  classDef ext fill:#0a0a0a,stroke:#2a2a2a,color:#999;
+  class core,music,backend box;
+  class lastfm,free,spotify,apple ext;
+```
+
+The client (Expo app) is the hub: it runs the quiz and re-ranking on-device, calls the backend for track discovery, and talks to Spotify/Apple Music directly for playback and saving — the backend never touches your Spotify account or the tracks you actually play, only the search/rank pipeline.
+
 ## How it works
 1. **Assessment (optional)** — a randomized 10-item Big Five short form (drawn from a Mini-IPIP-style 20-item pool: one regular + one reverse-scored item per trait, both which pair and their order randomized per test taker) → normalized OCEAN vector. Skip is available both before starting and mid-quiz, saving a neutral vector instead, which mathematically produces zero personality-driven shift in the seed engine — the playlist is then driven by activity + mood + weather + time alone. The OCEAN bar-graph breakdown is viewable again any time by tapping the personality placard in Profile.
 2. **Mood** — a one-time-per-session prompt (multi-select bubbles + free text) analyzed on the backend via a hand-built valence/arousal lexicon (circumplex model of affect), with negation handling.
