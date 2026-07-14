@@ -63,7 +63,33 @@ cd app
 npm install
 npx expo start --tunnel   # or `npx expo start` if your phone shares the same Wi-Fi (LAN mode)
 ```
-Scan the QR with Expo Go on a physical phone. Note: `--tunnel` uses `@expo/ngrok`, which as of this writing still bundles a deprecated ngrok v2 agent binary that ngrok's backend now rejects (`ERR_NGROK_3200` / `failed to start tunnel`) — even with a valid ngrok account authtoken configured. If that happens, either use LAN mode, or run a standalone ngrok v3 tunnel yourself (`brew install ngrok`, `ngrok config add-authtoken <token>`, `ngrok http 8081` alongside a plain `npx expo start`) and enter the resulting `exp://<subdomain>.ngrok-free.dev` URL manually in Expo Go.
+Scan the QR with Expo Go on a physical phone.
+
+### If `--tunnel` fails (`ERR_NGROK_3200` / `failed to start tunnel` / `remote gone away`)
+
+`@expo/ngrok` bundles a deprecated ngrok v2 agent binary that ngrok's backend now rejects outright — this happens even with a valid ngrok account authtoken configured for it, because Expo CLI's tunnel integration uses its own hardcoded token/domain (`exp.direct`), not your local ngrok config, and the failure is protocol-level (v2 agent, not a token problem). Two ways out, in order of how much they actually fix vs. work around:
+
+**Quick workaround — LAN mode** (phone and computer must share Wi-Fi):
+```
+npx expo start          # no --tunnel
+```
+
+**Real fix — swap in a modern ngrok v3 binary + tell Metro its public address.** Binary-swapping alone isn't enough (v3 rejects the v2-style YAML config `@expo/ngrok` generates for it), so this pairs a *standalone* ngrok v3 process with Expo's own `EXPO_PACKAGER_PROXY_URL` env var, which takes priority over every other URL-source Expo CLI would otherwise use:
+```
+brew install ngrok
+ngrok config add-authtoken <your token>          # free account at ngrok.com
+
+# terminal 1 — the tunnel
+ngrok http 8081
+
+# terminal 2 — Metro, told its own public address so the manifest
+# it serves embeds the real ngrok URL instead of 127.0.0.1:8081
+# (which Expo Go can't reach, and naively substituting just the
+# hostname back in produces an invalid "ngrok-host:8081" combo,
+# since ngrok's HTTPS edge doesn't listen on port 8081)
+EXPO_PACKAGER_PROXY_URL=https://<your-subdomain>.ngrok-free.dev npx expo start -c
+```
+Grab your ngrok URL from the first terminal's output, or `curl -s http://127.0.0.1:4040/api/tunnels`. Enter `exp://<your-subdomain>.ngrok-free.dev` manually in Expo Go (or scan a QR code encoding that same URL). Both processes need to stay running, and ngrok's free tier hands out a new random subdomain each time the tunnel restarts.
 
 ## Tests
 Both packages use Node's built-in test runner, covering the pure recommendation math (Bayesian blending, seed targeting, mood analysis):
