@@ -36,12 +36,12 @@ A brief branded title card (front page) shows for about two seconds on every lau
 - Either save flow: connects Spotify if you haven't already (PKCE OAuth, opens Spotify's own sign-in), matches each track to Spotify by title/artist, creates a private playlist named after the activity + mood (e.g. "Cadence — Deep Work, Energetic"), writes a description narrating when/where/what the weather was/what tempo it's tuned to, and uploads a generated square cover image matching the session banner's art.
 
 ### 4. Road Trip mode
-A seventh entry point next to the six activity chips, but with its own flow instead of a single tap:
-- Tapping **Road Trip** opens a small form asking where you're headed — a **From** and a **To**, typed as free text (e.g. "San Francisco, CA" → "Los Angeles, CA").
+A seventh entry point next to the six activity chips, opening its own full-screen page (not a modal over the regular feed):
+- Tapping **Road Trip** opens a dedicated page asking where you're headed — a **From** and a **To**, typed as free text (e.g. "San Francisco, CA" → "Los Angeles, CA").
 - On submit, the backend geocodes both places, gets a real driving route between them (distance, duration, and the route's actual road geometry — not a straight line), and samples elevation along that route to classify the terrain as flat, rolling, or mountainous from how much the grade swings along the way, not just the start/end elevation.
 - That terrain reading, the trip's driving duration, and the weather at the route's midpoint all shape the target tempo — winding mountain roads nudge it up, a flat highway cruise leaves it steady — the same "modest, explainable nudge" the mood/weather signals use everywhere else in the app.
-- The batch size is sized to the actual trip (~1 track per 3.5 minutes of driving, capped at 40) and generated as one batch covering the whole drive, not built up track by track. Once it's ready, a **Complete Road Trip Playlist → Spotify** button saves the entire generated batch (not just favourited tracks — the whole batch *is* the trip playlist) as a real Spotify playlist, named and described with the route, distance, duration, and terrain.
-- Refresh, individual track preview/like/skip, and My Picks all still work the same as any other activity on top of this — Road Trip only changes how the initial batch gets built and named.
+- The page then shows a **From → To** journey strip with distance/duration/terrain, the same generated mood/weather "feeling placard" every other activity gets, the target BPM, and the track list — the batch size is sized to the actual trip (~1 track per 3.5 minutes of driving, capped at 40) and generated as one batch covering the whole drive, not built up track by track. A **Save Trip to Spotify** button saves the entire generated batch (not just favourited tracks — the whole batch *is* the trip playlist) as a real Spotify playlist, named and described with the route, distance, duration, and terrain.
+- Refresh, individual track preview/like/skip, and My Picks all still work the same as any other activity on top of this. Closing the page keeps the trip loaded — reopening it (without picking a different activity first) shows exactly where you left off, rather than re-asking for a From/To.
 
 ### 5. Profile screen
 Reached via the "Profile" link in the top bar.
