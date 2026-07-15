@@ -59,21 +59,26 @@ flowchart LR
     direction LR
     core["seed + mood + weather engine<br/>traits x activity x mood/weather to bpm band"]
     music["music provider<br/>itunes search + apple music verify"]
+    routing["routing engine<br/>road trip mode only: from/to to route + terrain"]
     core --> music
+    routing --> core
   end
 
   you == "POST /recommend<br/>traits, activity, mood, gps" ==> core
+  you == "POST /roadtrip<br/>traits, from, to, mood" ==> routing
 
   music -. "similar artists" .-> lastfm["last.fm"]
   music -. "bpm, weather, place fill-in" .-> free["open-meteo, bigdatacloud,<br/>getsongbpm"]
+  routing -. "geocode + elevation" .-> free
+  routing -. "driving route + geometry" .-> osrm["osrm public server"]
 
   you -- "oauth pkce + playlist save" --> spotify["spotify"]
   you -- "deep link" --> apple["apple music"]
 
   classDef box fill:#141414,stroke:#333,color:#eee;
   classDef ext fill:#0a0a0a,stroke:#2a2a2a,color:#999;
-  class core,music,backend box;
-  class lastfm,free,spotify,apple ext;
+  class core,music,routing,backend box;
+  class lastfm,free,osrm,spotify,apple ext;
 ```
 
 The client (Expo app) is the hub: it runs the quiz and re-ranking on-device, calls the backend for track discovery, and talks to Spotify/Apple Music directly for playback and saving — the backend never touches your Spotify account or the tracks you actually play, only the search/rank pipeline.
@@ -91,8 +96,14 @@ flowchart TD
   F -. "7 . refresh: exclude everything already shown" .-> E
   F --> G["8 . my picks + save<br/>favourited tracks accumulate across activities,<br/>saved to spotify anytime"]
 
+  RT["road trip: from + to<br/>osrm real driving route, distance, duration"] --> TR["terrain, from elevation<br/>sampled along the route"]
+  TR --> RD["road trip seed engine<br/>terrain x duration x mood/weather to bpm band"]
+  B --> RD
+  C --> RD
+  RD --> E
+
   classDef box fill:#141414,stroke:#333,color:#eee;
-  class A,B,C,D,E,F,G box;
+  class A,B,C,D,E,F,G,RT,TR,RD box;
 ```
 
 1. **Assessment (optional)** — a randomized 10-item Big Five short form (drawn from a Mini-IPIP-style 20-item pool: one regular + one reverse-scored item per trait, both which pair and their order randomized per test taker) → normalized OCEAN vector. Skip is available both before starting and mid-quiz, saving a neutral vector instead, which mathematically produces zero personality-driven shift in the seed engine — the playlist is then driven by activity + mood + weather + time alone. The OCEAN bar-graph breakdown is viewable again any time by tapping the personality placard in Profile.
@@ -104,6 +115,7 @@ flowchart TD
 7. **Refresh** — re-pulls a fresh batch for the same mode, excluding every track already shown this session so it doesn't just re-serve the same results (iTunes search ranking is deterministic); capped at 10 refreshes per session.
 8. **My Picks + save** — favourited tracks accumulate into a persistent, cross-activity/cross-refresh catalog (independent of whichever single activity's queue is open), reorderable by drag, removable via a tap-and-hold X shown directly on the album art. One tap creates a real Spotify playlist via PKCE auth — either from the current session's queue or from the whole My Picks catalog — named e.g. `Cadence — Deep Work, Energetic`, with a description narrating when/where/how it was made and a generated cover image.
 9. **Themes** — four selectable colour themes (Black Bolt plus Pink/Cyan/Purple, each paired with a true complementary accent), persisted across launches and applied app-wide via a React context. Not part of the recommendation pipeline above — a standalone on-device UI preference.
+10. **Road Trip** (RT/TR/RD in the diagram) — a parallel entry path, not a seventh activity: real driving route + terrain replace the activity pick, but still combines with mood/weather the same way and still lands in the same cross-genre discovery/re-ranking pipeline everything else uses. See "Full functional flow" above for the complete walkthrough.
 
 ## Repo layout
 - `app/` — the Expo / React Native client
