@@ -20,11 +20,12 @@
  */
 import express from "express";
 import cors from "cors";
-import { seedTarget, ACTIVITIES } from "./engine/seedEngine.js";
+import { seedTarget, roadTripSeedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
 import { searchAcrossGenres } from "./engine/musicProvider.js";
 import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
 import { getSimilarArtists } from "./engine/lastfm.js";
+import { geocodePlace, getRoute, classifyTerrain, TERRAIN_BPM_SHIFT } from "./engine/routing.js";
 
 const app = express();
 app.use(cors());
@@ -113,6 +114,108 @@ app.post("/recommend", async (req, res) => {
     const reserve = pool.slice(limit);
 
     res.json({ target, tracks, reserve, mood, weather, place, diag });
+  } catch (e) {
+    diag.push(`fatal: ${e.message}`);
+    res.status(500).json({ error: e.message, diag });
+  }
+});
+
+/**
+ * POST /roadtrip
+ * body: { traits, from: string, to: string, moodLabels?: string[],
+ *         moodText?: string, spotifyArtists?: string[],
+ *         excludeIds?: string[] }
+ * returns: { target, tracks, reserve, mood, weather, route, diag }
+ *
+ * A dedicated flow rather than an extra POST /recommend activity: the input
+ * shape is genuinely different (free-text places instead of an activity key
+ * + device GPS), and the batch size is driven by trip duration rather than
+ * a fixed limit, since a 20-minute hop and a 6-hour drive need very
+ * different amounts of music for one sitting.
+ */
+app.post("/roadtrip", async (req, res) => {
+  const diag = [];
+  try {
+    const {
+      traits, from, to, moodLabels = [], moodText = "",
+      spotifyArtists = [], excludeIds = [],
+    } = req.body;
+    if (!traits || !from || !to) return res.status(400).json({ error: "traits, from, and to are required" });
+
+    const fromPlace = await geocodePlace(from);
+    const toPlace = await geocodePlace(to);
+    diag.push(`route: ${fromPlace.name} -> ${toPlace.name}`);
+
+    const route = await getRoute(fromPlace, toPlace);
+    diag.push(`distance ${route.distanceKm.toFixed(1)} km, ~${Math.round(route.durationMin)} min driving`);
+
+    let terrain = "flat";
+    try {
+      terrain = await classifyTerrain(route.geometry, route.distanceKm);
+    } catch (e) {
+      diag.push(`terrain lookup failed, defaulting to flat: ${e.message}`);
+    }
+    const terrainShift = TERRAIN_BPM_SHIFT[terrain] ?? 0;
+    diag.push(`terrain: ${terrain} (${terrainShift >= 0 ? "+" : ""}${terrainShift} BPM)`);
+
+    const mood = analyzeCombined(moodLabels, moodText);
+    diag.push(`mood: ${mood.label} (v=${mood.valence.toFixed(2)}, a=${mood.arousal.toFixed(2)})`);
+    const moodShift = Math.round(mood.arousal * 15);
+
+    // A single representative weather read at the route's midpoint, not a
+    // point-by-point forecast along the whole drive — same "nudge, don't
+    // overthink it" spirit as everywhere else weather is used.
+    let weather = null, weatherShift = 0;
+    const mid = route.geometry[Math.floor(route.geometry.length / 2)];
+    try {
+      weather = await fetchWeather(mid[1], mid[0]);
+      weatherShift = weatherToBpmShift(weather);
+      diag.push(`weather at route midpoint: ${weather.condition}, ${weather.tempC}°C -> ${weatherShift} BPM`);
+    } catch (e) {
+      diag.push(`weather lookup failed: ${e.message}`);
+    }
+
+    const combinedShift = moodShift + weatherShift + terrainShift;
+    const target = roadTripSeedTarget(traits, combinedShift);
+
+    const topArtists = spotifyArtists.slice(0, 3);
+    const similarLists = await Promise.all(topArtists.map((a) => getSimilarArtists(a, 2)));
+    const similarArtists = [...new Set(similarLists.flat())].slice(0, 3);
+    const seedPool = [...target.seedPool, ...topArtists, ...similarArtists];
+    if (similarArtists.length) {
+      diag.push(`+ ${similarArtists.length} real similar artists (Last.fm): ${similarArtists.join(", ")}`);
+    }
+
+    // Sized to the actual trip, not a fixed batch: roughly one track per
+    // 3.5 minutes of driving, capped so a cross-country drive doesn't
+    // request an unreasonable number of tracks in a single call — this is
+    // the ONE batch for the whole trip (see README's road trip use case),
+    // not the first of several.
+    const limit = Math.max(6, Math.min(40, Math.round(route.durationMin / 3.5)));
+    diag.push(`sized for ~${Math.round(route.durationMin)} min drive -> ${limit} tracks`);
+
+    const pool = await searchAcrossGenres({
+      seedPool,
+      bpmMin: target.bpmMin,
+      bpmMax: target.bpmMax,
+      limit: limit + 10,
+      excludeIds,
+      onDiag: (m) => diag.push(m),
+    });
+
+    const tracks = pool.slice(0, limit);
+    const reserve = pool.slice(limit);
+
+    res.json({
+      target, tracks, reserve, mood, weather,
+      route: {
+        from: fromPlace.name, to: toPlace.name,
+        distanceKm: Math.round(route.distanceKm * 10) / 10,
+        durationMin: Math.round(route.durationMin),
+        terrain,
+      },
+      diag,
+    });
   } catch (e) {
     diag.push(`fatal: ${e.message}`);
     res.status(500).json({ error: e.message, diag });

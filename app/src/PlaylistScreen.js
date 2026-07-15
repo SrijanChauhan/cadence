@@ -147,6 +147,11 @@ export default function PlaylistScreen({ traits }) {
     { key: "workout", label: "Workout" }, { key: "wind_down", label: "Wind-down" },
   ];
 
+  // road_trip is deliberately NOT in ACTIVITIES above (it needs a from/to
+  // form, not a single chip tap) — this covers it wherever the screen
+  // otherwise looks up the current activity's display label.
+  const activityLabel = () => (activity === "road_trip" ? "Road Trip" : ACTIVITIES.find((a) => a.key === activity)?.label);
+
   const onPickActivity = (key) => {
     if (!moodAskedThisSession.current) {
       setPendingActivity(key);
@@ -162,16 +167,50 @@ export default function PlaylistScreen({ traits }) {
     setSelectedBubbles((sel) => sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label]);
   };
 
+  // Road Trip has its own from/to form ahead of the shared mood prompt
+  // (see roadTripFormOpen below) — pendingActivity === "road_trip" is what
+  // tells confirmMood/skipMood to call loadRoadTrip instead of load().
   const confirmMood = () => {
     moodAskedThisSession.current = true;
     setMoodPromptOpen(false);
-    load(pendingActivity, { labels: selectedBubbles, text: extraFeeling });
+    if (pendingActivity === "road_trip") {
+      loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, { labels: selectedBubbles, text: extraFeeling });
+    } else {
+      load(pendingActivity, { labels: selectedBubbles, text: extraFeeling });
+    }
   };
 
   const skipMood = () => {
     moodAskedThisSession.current = true;
     setMoodPromptOpen(false);
-    load(pendingActivity, { labels: [], text: "" });
+    if (pendingActivity === "road_trip") {
+      loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, { labels: [], text: "" });
+    } else {
+      load(pendingActivity, { labels: [], text: "" });
+    }
+  };
+
+  const [roadTripFormOpen, setRoadTripFormOpen] = useState(false);
+  const [fromInput, setFromInput] = useState("");
+  const [toInput, setToInput] = useState("");
+  const [route, setRoute] = useState(null); // { from, to, distanceKm, durationMin, terrain }
+  const lastRoadTrip = useRef(null); // { from, to } — reused by confirmMood/skipMood/refresh
+
+  const openRoadTripForm = () => { setFromInput(""); setToInput(""); setRoadTripFormOpen(true); };
+
+  const submitRoadTripForm = () => {
+    const from = fromInput.trim(), to = toInput.trim();
+    if (!from || !to) return;
+    setRoadTripFormOpen(false);
+    lastRoadTrip.current = { from, to };
+    if (!moodAskedThisSession.current) {
+      setPendingActivity("road_trip");
+      setSelectedBubbles([]);
+      setExtraFeeling("");
+      setMoodPromptOpen(true);
+    } else {
+      loadRoadTrip(from, to);
+    }
   };
 
   const getLocation = async () => {
@@ -264,6 +303,66 @@ export default function PlaylistScreen({ traits }) {
     }
   };
 
+  // Road Trip's own load path: from/to text instead of an activity key +
+  // device GPS, and the backend sizes the batch to the trip's actual
+  // driving duration instead of a fixed limit — this is meant to be the
+  // one batch for the whole trip, not the first of several, so there's no
+  // per-activity queue restore here (a leftover queue from a DIFFERENT
+  // previous trip merging into a new one would be wrong, unlike the six
+  // normal activities where restoring the same activity's queue makes sense).
+  const loadRoadTrip = async (from, to, moodInput, excludeIds = []) => {
+    if (excludeIds.length === 0) {
+      seenTrackIds.current = new Set();
+      setRefreshCount(0);
+    }
+    setActivity("road_trip"); setLoading(true); setError(null); setTracks([]); setFeedback({}); setDiag([]);
+    if (excludeIds.length === 0) setQueue([]);
+    lastRoadTrip.current = { from, to };
+    const pushDiag = (m) => setDiag((d) => [...d, m]);
+    try {
+      const { names: spotifyArtists } = await getTopArtists();
+      const body = {
+        traits, from, to,
+        moodLabels: moodInput ? moodInput.labels : (mood?.selected || []),
+        moodText: moodInput ? moodInput.text : "",
+        spotifyArtists,
+        excludeIds,
+      };
+      const res = await fetch(`${BACKEND_URL}/roadtrip`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `Backend ${res.status}`);
+      (json.diag || []).forEach(pushDiag);
+      if (moodInput) setMood(json.mood);
+
+      if (!buckets.current.road_trip) {
+        try {
+          const savedB = await AsyncStorage.getItem("cadence:bayes:road_trip");
+          buckets.current.road_trip = savedB ? JSON.parse(savedB) : newBucketState((json.target.bpmMin + json.target.bpmMax) / 2);
+        } catch {
+          buckets.current.road_trip = newBucketState((json.target.bpmMin + json.target.bpmMax) / 2);
+        }
+      }
+
+      setTarget(json.target);
+      setReserve(json.reserve || []);
+      setWeather(json.weather || null);
+      setRoute(json.route || null);
+      // reuses the same `place` slot SessionBanner/CoverArt already render
+      // under the weather line — "from → to" reads naturally there
+      setPlace(json.route ? `${json.route.from} → ${json.route.to}` : null);
+      setTracks(rankTracks(json.tracks, buckets.current.road_trip));
+
+      json.tracks.forEach((t) => seenTrackIds.current.add(t.id));
+      (json.reserve || []).forEach((t) => seenTrackIds.current.add(t.id));
+    } catch (e) {
+      setError(e.message || "Couldn't reach the Cadence backend.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // iTunes's search ranking is deterministic, so a plain re-load for the same
   // activity would hand back the same tracks — excludeIds tells the backend
   // the FULL cumulative set of everything shown so far this session (not
@@ -272,7 +371,11 @@ export default function PlaylistScreen({ traits }) {
   const refreshPlaylist = () => {
     if (refreshCount >= MAX_REFRESHES || loading) return;
     setRefreshCount((c) => c + 1);
-    load(activity, undefined, [...seenTrackIds.current]);
+    if (activity === "road_trip" && lastRoadTrip.current) {
+      loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, undefined, [...seenTrackIds.current]);
+    } else {
+      load(activity, undefined, [...seenTrackIds.current]);
+    }
   };
 
   const play = async (track) => {
@@ -373,7 +476,7 @@ export default function PlaylistScreen({ traits }) {
   // dropped rather than shown, since it's not a mood the user actually
   // picked.
   const playlistName = () => {
-    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label || "Session";
+    const actLabel = activityLabel() || "Session";
     const moodLabel = mood?.label && mood.label !== "Neutral" ? mood.label : null;
     return moodLabel ? `Cadence — ${actLabel}, ${moodLabel}` : `Cadence — ${actLabel}`;
   };
@@ -385,7 +488,7 @@ export default function PlaylistScreen({ traits }) {
     const now = new Date();
     const dateStr = now.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
     const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    const actLabel = ACTIVITIES.find((a) => a.key === activity)?.label || "your session";
+    const actLabel = activityLabel() || "your session";
 
     let story = `Built ${dateStr} at ${timeStr}`;
     if (place) story += ` in ${place}`;
@@ -459,7 +562,7 @@ export default function PlaylistScreen({ traits }) {
 
       addToPlaylistHistory({
         name, story,
-        activityLabel: ACTIVITIES.find((a) => a.key === activity)?.label,
+        activityLabel: activityLabel(),
         mood, weather, place,
         tracks: list,
         spotifyUrl: url,
@@ -512,6 +615,49 @@ export default function PlaylistScreen({ traits }) {
     }
   };
 
+  const [tripSaveState, setTripSaveState] = useState("idle");
+  const [tripSaveMsg, setTripSaveMsg] = useState("");
+
+  // Road Trip saves the WHOLE generated batch, not just favourited tracks —
+  // it's a purpose-built one-shot playlist sized to the drive, not an
+  // accumulate-as-you-go queue like the other activities, so completing the
+  // trip playlist means completing all of it.
+  const saveRoadTripToSpotify = async () => {
+    try {
+      if (!hasSpotifyAuth()) {
+        setTripSaveState("connecting"); setTripSaveMsg("Opening Spotify sign-in…");
+        const ok = await connectSpotify();
+        setSpotifyConnected(ok && hasSpotifyAuth());
+        if (!ok) { setTripSaveState("error"); setTripSaveMsg("Spotify sign-in was cancelled."); return; }
+      }
+      setTripSaveState("saving"); setTripSaveMsg("Building your road trip playlist…");
+      const list = tracks;
+      const coverImageBase64 = await captureCoverArt();
+      const name = route ? `Cadence — Road Trip: ${route.from} to ${route.to}` : "Cadence — Road Trip";
+      const story = route
+        ? `Made by Cadence. ${Math.round(route.distanceKm)} km, about ${Math.round(route.durationMin)} min from ${route.from} to ${route.to}. Terrain: ${route.terrain}.${weather?.tempC != null ? ` ${Math.round(weather.tempC)}°C and ${weather.condition} along the way.` : ""} Tuned to ${target ? `${target.bpmMin}–${target.bpmMax} BPM` : "the drive"}.`
+        : playlistStory();
+      const { matchedCount, totalCount, url, coverUploaded } = await createPlaylistFromTracks(list, {
+        name, description: story, coverImageBase64,
+      });
+
+      addToPlaylistHistory({
+        name, story,
+        activityLabel: "Road Trip",
+        mood, weather, place,
+        tracks: list,
+        spotifyUrl: url,
+      });
+
+      setTripSaveState("done");
+      setTripSaveMsg(
+        `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
+      );
+    } catch (e) {
+      setTripSaveState("error"); setTripSaveMsg(e.message || "Couldn't save to Spotify.");
+    }
+  };
+
   const post = activity && buckets.current[activity] ? posterior(buckets.current[activity]) : null;
   const nowPlaying = tracks.find((t) => t.id === playingId);
   const queueTracks = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
@@ -541,6 +687,11 @@ export default function PlaylistScreen({ traits }) {
             <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
           </Pressable>
         ))}
+        {/* Not a chip among the six above on purpose — it opens a from/to
+            form instead of loading immediately on tap. */}
+        <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripForm}>
+          <Text style={[s.chipText, activity === "road_trip" && s.chipTextActive]}>Road Trip</Text>
+        </Pressable>
       </View>
 
       {target && (
@@ -548,7 +699,7 @@ export default function PlaylistScreen({ traits }) {
           ref={bannerRef}
           mood={mood}
           weather={weather}
-          activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
+          activityLabel={activityLabel()}
           place={place}
         />
       )}
@@ -563,7 +714,7 @@ export default function PlaylistScreen({ traits }) {
             ref={coverArtRef}
             mood={mood}
             weather={weather}
-            activityLabel={ACTIVITIES.find((a) => a.key === activity)?.label}
+            activityLabel={activityLabel()}
             place={place}
           />
         </View>
@@ -580,6 +731,35 @@ export default function PlaylistScreen({ traits }) {
               <BounceNumber value={`${Math.round(post.lambda * 100)}`} style={s.lambdaNum} />
               <Text style={s.lambdaLabel}>% PERSONALITY</Text>
             </View>
+          )}
+        </View>
+      )}
+
+      {activity === "road_trip" && route && (
+        <View style={s.routeBox}>
+          <Text style={s.routeLine}>
+            {Math.round(route.distanceKm)} km · ~{Math.round(route.durationMin)} min · {route.terrain.charAt(0).toUpperCase() + route.terrain.slice(1)} terrain
+          </Text>
+        </View>
+      )}
+
+      {activity === "road_trip" && tracks.length > 0 && (
+        // The whole batch is sized to the trip's driving duration and is
+        // meant to be the complete trip playlist, not a queue built up by
+        // favouriting individual tracks — so this saves everything shown,
+        // not just liked tracks, right where the batch first appears.
+        <View style={{ marginBottom: 16 }}>
+          <Pressable
+            style={[s.picksSaveBtn, (tripSaveState === "saving" || tripSaveState === "connecting") && s.refreshBtnMaxed]}
+            onPress={saveRoadTripToSpotify}
+            disabled={tripSaveState === "saving" || tripSaveState === "connecting"}
+          >
+            <Text style={s.picksSaveBtnText}>
+              {tripSaveState === "saving" ? "SAVING…" : tripSaveState === "connecting" ? "CONNECTING…" : `COMPLETE ROAD TRIP PLAYLIST → SPOTIFY (${tracks.length})`}
+            </Text>
+          </Pressable>
+          {!!tripSaveMsg && (
+            <Text style={[s.saveMsg, tripSaveState === "error" && s.saveMsgError]}>{tripSaveMsg}</Text>
           )}
         </View>
       )}
@@ -619,7 +799,10 @@ export default function PlaylistScreen({ traits }) {
       {error && (
         <View>
           <Text style={s.error}>{error}</Text>
-          {activity && <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>}
+          {activity === "road_trip" && lastRoadTrip.current && (
+            <Pressable style={s.retry} onPress={() => loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to)}><Text style={s.retryText}>RETRY</Text></Pressable>
+          )}
+          {activity && activity !== "road_trip" && <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>}
         </View>
       )}
       {diag.length > 0 && (error || loading) && (
@@ -752,6 +935,42 @@ export default function PlaylistScreen({ traits }) {
         </View>
       </Pressable>
     )}
+
+    {roadTripFormOpen && (
+      <Pressable style={s.moodOverlay} onPress={Keyboard.dismiss}>
+        <View style={s.moodCard}>
+          <Text style={s.moodKicker}>ROAD TRIP</Text>
+          <Text style={s.moodQ}>Where are you headed?</Text>
+          <Text style={s.moodSub}>Distance, driving time, and terrain along the route all shape the playlist.</Text>
+          <TextInput
+            style={[s.moodInput, { minHeight: 0 }]}
+            placeholder="From (e.g. San Francisco, CA)"
+            placeholderTextColor="#5A5A5A"
+            value={fromInput}
+            onChangeText={setFromInput}
+            returnKeyType="next"
+          />
+          <TextInput
+            style={[s.moodInput, { minHeight: 0 }]}
+            placeholder="To (e.g. Los Angeles, CA)"
+            placeholderTextColor="#5A5A5A"
+            value={toInput}
+            onChangeText={setToInput}
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
+          />
+          <Pressable
+            style={[s.moodGo, (!fromInput.trim() || !toInput.trim()) && s.refreshBtnMaxed]}
+            onPress={submitRoadTripForm}
+            disabled={!fromInput.trim() || !toInput.trim()}
+          >
+            <Text style={s.moodGoText}>PLAN TRIP</Text>
+          </Pressable>
+          <Pressable onPress={() => setRoadTripFormOpen(false)} hitSlop={12}><Text style={s.moodSkip}>Cancel</Text></Pressable>
+        </View>
+      </Pressable>
+    )}
     </View>
   );
 }
@@ -778,6 +997,9 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   lambdaBox: { alignItems: "center" },
   lambdaNum: { color: VOLT, fontSize: 56, fontWeight: "900", letterSpacing: -2, lineHeight: 58 },
   lambdaLabel: { color: "#6E6E6E", fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
+
+  routeBox: { marginBottom: 14 },
+  routeLine: { color: "#8A8A8A", fontSize: 12, fontWeight: "700" },
 
   loadingNote: { color: "#6E6E6E", fontSize: 11.5, marginTop: 8, fontWeight: "600" },
   error: { color: "#FF5A4E", fontSize: 13.5, fontWeight: "700", marginTop: 14, lineHeight: 19 },

@@ -10,6 +10,7 @@ Working prototype: Expo app (physical phone via Expo Go) + a small Express backe
 - In-app 30s preview playback with auto-advancing queue: working.
 - Save the current session's queue, or the whole cross-session "My Picks" catalog, as a real Spotify playlist (full songs) with a humanized description and a generated cover: working.
 - Refresh Playlist (re-pull fresh tracks for the same mode, capped at 10 refreshes/session) and four selectable colour themes: working.
+- Road Trip mode (from/to → real driving route, terrain-aware tempo, one batch sized to the drive, saved as its own Spotify playlist): working.
 - Full-song playback *inside* the app, and background/lock-screen playback controls: need a dev build — see `app/V3-ACTION-PLAN.md`.
 
 ## Full functional flow
@@ -34,7 +35,15 @@ A brief branded title card (front page) shows for about two seconds on every lau
 - The current session's queue (favourited tracks for *this* activity) can also be saved on its own via the queue panel — tap the queue icon in the bottom bar, then **Save Queue to Spotify**.
 - Either save flow: connects Spotify if you haven't already (PKCE OAuth, opens Spotify's own sign-in), matches each track to Spotify by title/artist, creates a private playlist named after the activity + mood (e.g. "Cadence — Deep Work, Energetic"), writes a description narrating when/where/what the weather was/what tempo it's tuned to, and uploads a generated square cover image matching the session banner's art.
 
-### 4. Profile screen
+### 4. Road Trip mode
+A seventh entry point next to the six activity chips, but with its own flow instead of a single tap:
+- Tapping **Road Trip** opens a small form asking where you're headed — a **From** and a **To**, typed as free text (e.g. "San Francisco, CA" → "Los Angeles, CA").
+- On submit, the backend geocodes both places, gets a real driving route between them (distance, duration, and the route's actual road geometry — not a straight line), and samples elevation along that route to classify the terrain as flat, rolling, or mountainous from how much the grade swings along the way, not just the start/end elevation.
+- That terrain reading, the trip's driving duration, and the weather at the route's midpoint all shape the target tempo — winding mountain roads nudge it up, a flat highway cruise leaves it steady — the same "modest, explainable nudge" the mood/weather signals use everywhere else in the app.
+- The batch size is sized to the actual trip (~1 track per 3.5 minutes of driving, capped at 40) and generated as one batch covering the whole drive, not built up track by track. Once it's ready, a **Complete Road Trip Playlist → Spotify** button saves the entire generated batch (not just favourited tracks — the whole batch *is* the trip playlist) as a real Spotify playlist, named and described with the route, distance, duration, and terrain.
+- Refresh, individual track preview/like/skip, and My Picks all still work the same as any other activity on top of this — Road Trip only changes how the initial batch gets built and named.
+
+### 5. Profile screen
 Reached via the "Profile" link in the top bar.
 - A personality placard at the top — tap it to see the full OCEAN bar-graph breakdown again, with buttons to go back to Profile or straight to the playlist screen.
 - **Test Again** retakes the quiz from scratch. **Theme** opens a picker with four colour themes (Black Bolt, Pink, Cyan, Purple), applied instantly and remembered across launches.
@@ -100,7 +109,7 @@ flowchart TD
 - `app/` — the Expo / React Native client
   - `App.js` — theme + personality profile persistence, top-level navigation
   - `src/OnboardingScreen.js` — the Big Five quiz (intro → 10 randomized prompts → OCEAN results)
-  - `src/PlaylistScreen.js` — activity picker, mood prompt, track feed, queue, refresh, Spotify save
+  - `src/PlaylistScreen.js` — activity picker, mood prompt, track feed, queue, refresh, Road Trip form, Spotify save
   - `src/MyPicksStrip.js` — the cross-session favourites catalog (tap/hold-drag-reorder/hold-still-to-remove gestures)
   - `src/ProfileScreen.js`, `src/TraitGraph.js`, `src/PersonalityPlacard.js` — profile, OCEAN graph, playlist history
   - `src/theme.js`, `src/traits.js` — shared theme presets and Big Five trait metadata
@@ -109,8 +118,8 @@ flowchart TD
   - `src/config.js` — points the client at the deployed backend URL
   - `V3-ACTION-PLAN.md` — path to full-song in-app playback (Spotify Remote SDK + dev build)
 - `server/` — the Express backend (deploy target: Render, see `server/DEPLOY.md`)
-  - `index.js` — the `POST /recommend` pipeline
-  - `engine/` — `seedEngine`, `moodEngine`, `weather`, `musicProvider` (iTunes search, junk filter, dedup, BPM proximity sort), `itunes`, `appleMusicResolve` (availability verification), `getSongBpm`, `lastfm`
+  - `index.js` — the `POST /recommend` pipeline, plus `POST /roadtrip` for Road Trip mode
+  - `engine/` — `seedEngine` (also exports `roadTripSeedTarget`), `moodEngine`, `weather`, `musicProvider` (iTunes search, junk filter, dedup, BPM proximity sort), `itunes`, `appleMusicResolve` (availability verification), `getSongBpm`, `lastfm`, `routing` (geocoding, real driving routes, terrain-from-elevation classification — all free/no-key, backing Road Trip mode)
 - `docs/` — product spec and technical appendices
 - `CLAUDE.md` — architecture/instructions for AI-assisted development on this repo; the most current single source of truth for how the pieces fit together
 
@@ -176,6 +185,8 @@ cd server && npm test
 - **Deezer** was tried first (native BPM) but dropped entirely: resolving Deezer tracks to a verified Apple Music match failed 75-100% of the time for niche/instrumental genres in production, sometimes returning zero playable tracks for focus-style modes.
 - **iTunes Search API** is the sole track source now: free, no auth, works from India, 30s previews, direct Apple Music links carried from the same search that found the track (verified by construction, zero drop rate) — no native BPM (filled in via GetSongBPM) and no ISRC (the public Lookup API doesn't expose one, despite some older docs claiming otherwise — verified against a live response).
 - **Last.fm** is the free source for real similar-artist data now that Spotify's is gone — `artist.getSimilar`, free API key for personal use.
+- **Open-Meteo's geocoding API** matches against a bare place-name field — it returns zero results for the "City, State" format people naturally type (e.g. "San Francisco, CA" fails outright even though "San Francisco" alone finds it instantly). `routing.js`'s `geocodePlace` retries with just the part before the first comma when the full string comes up empty.
+- **OSRM's public demo routing server** (`router.project-osrm.org`) gives real driving distance/duration/geometry for free with no key, but it's explicitly not meant for production load — shared, rate-limited, can be slow or flaky. Fine for personal use; a real deployment would want self-hosted OSRM or a paid routing provider.
 
 ## Known limitations
 - Full songs play only after saving to Spotify (or via the deferred in-app dev-build path); in-app playback is 30s previews.

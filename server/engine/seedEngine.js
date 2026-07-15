@@ -54,17 +54,25 @@ const ACTIVITY_BASE = {
 
 export const ACTIVITIES = Object.entries(ACTIVITY_BASE).map(([key, v]) => ({ key, label: v.label }));
 
-/**
- * @param {{O:number,C:number,E:number,A:number,N:number}} traits 0–1 normalized
- * @param {string} activity key from ACTIVITY_BASE
- * @param {number} [moodShiftBpm] optional BPM nudge from the session's mood (see moodEngine.js)
- * @returns {{bpmMin:number,bpmMax:number,seedTerms:string,explain:string[]}}
- */
-export function seedTarget(traits, activity, extraBpmShift = 0) {
-  const base = ACTIVITY_BASE[activity];
-  if (!base) throw new Error(`Unknown activity: ${activity}`);
-  const explain = [];
+// Road Trip isn't in ACTIVITY_BASE/ACTIVITIES on purpose — it doesn't show up
+// as a normal activity chip (it needs a from/to form, not a single tap), and
+// its batch size is driven by trip duration rather than a fixed limit. See
+// roadTripSeedTarget below and POST /roadtrip in index.js.
+const ROAD_TRIP_BASE = {
+  label: "Road Trip",
+  bpm: [95, 130],
+  seeds: ["road trip anthems", "classic rock", "indie singalong", "americana", "synthwave driving"],
+  vocalPenalty: false,
+};
 
+/**
+ * Shared core: base tempo band + seed pool → trait/shift-adjusted target.
+ * `neuroticismCap` is the one piece of logic that's keyed to specific
+ * ACTIVITY_BASE activities (stress-adjacent ones) rather than being
+ * universal, so it's passed in rather than re-derived from an activity key.
+ */
+function computeTarget(base, traits, extraBpmShift, neuroticismCap) {
+  const explain = [];
   let [lo, hi] = base.bpm;
 
   // Extraversion shifts the whole band up/down (±10 BPM at the extremes)
@@ -72,14 +80,14 @@ export function seedTarget(traits, activity, extraBpmShift = 0) {
   lo += eShift; hi += eShift;
   if (Math.abs(eShift) > 4) explain.push(`${eShift > 0 ? "Raised" : "Lowered"} tempo ~${Math.abs(Math.round(eShift))} BPM for your ${eShift > 0 ? "higher" : "lower"} Extraversion`);
 
-  // session mood + local weather (analyzed server-side) nudge tempo, independent of personality
+  // session mood + local weather (+ terrain, for road trips) nudge tempo, independent of personality
   if (extraBpmShift && Math.abs(extraBpmShift) >= 3) {
     lo += extraBpmShift; hi += extraBpmShift;
     explain.push(`${extraBpmShift > 0 ? "Boosted" : "Softened"} tempo ~${Math.abs(extraBpmShift)} BPM for how you're feeling and conditions right now`);
   }
 
   // Neuroticism narrows toward the calm end for stress-adjacent activities
-  if ((activity === "deep_work" || activity === "wind_down" || activity === "calls") && traits.N > 0.6) {
+  if (neuroticismCap && traits.N > 0.6) {
     hi -= (traits.N - 0.6) * 25;
     explain.push("Capped the top of the tempo band — calmer target for a higher-sensitivity profile");
   }
@@ -107,4 +115,26 @@ export function seedTarget(traits, activity, extraBpmShift = 0) {
   // seedPool: the full (personality-filtered) list — searched across genre-by-
   // genre for real cross-genre exploration instead of one random term.
   return { bpmMin: lo, bpmMax: hi, seedTerms, seedPool, explain };
+}
+
+/**
+ * @param {{O:number,C:number,E:number,A:number,N:number}} traits 0–1 normalized
+ * @param {string} activity key from ACTIVITY_BASE
+ * @param {number} [extraBpmShift] optional BPM nudge from the session's mood/weather
+ * @returns {{bpmMin:number,bpmMax:number,seedTerms:string,seedPool:string[],explain:string[]}}
+ */
+export function seedTarget(traits, activity, extraBpmShift = 0) {
+  const base = ACTIVITY_BASE[activity];
+  if (!base) throw new Error(`Unknown activity: ${activity}`);
+  const neuroticismCap = activity === "deep_work" || activity === "wind_down" || activity === "calls";
+  return computeTarget(base, traits, extraBpmShift, neuroticismCap);
+}
+
+/**
+ * Same shape as seedTarget, for the Road Trip flow: extraBpmShift here is
+ * expected to already include mood + weather + terrain combined (see
+ * POST /roadtrip in index.js).
+ */
+export function roadTripSeedTarget(traits, extraBpmShift = 0) {
+  return computeTarget(ROAD_TRIP_BASE, traits, extraBpmShift, false);
 }

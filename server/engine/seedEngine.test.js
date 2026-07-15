@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { seedTarget, ACTIVITIES } from "./seedEngine.js";
+import { seedTarget, roadTripSeedTarget, ACTIVITIES } from "./seedEngine.js";
 
 const NEUTRAL = { O: 0.5, C: 0.5, E: 0.5, A: 0.5, N: 0.5 };
 
@@ -69,4 +69,23 @@ test("high Conscientiousness in a vocal-penalty activity prefers instrumental/am
   for (const term of t.seedPool) {
     assert.ok(term.includes("instrumental") || term.includes("ambient"), `"${term}" should be instrumental/ambient-flavored`);
   }
+});
+
+test("roadTripSeedTarget returns a valid band and is not in the ACTIVITIES chip list", () => {
+  const t = roadTripSeedTarget(NEUTRAL);
+  assert.ok(t.bpmMin < t.bpmMax);
+  assert.ok(t.bpmMin >= 40 && t.bpmMax <= 200);
+  assert.equal(ACTIVITIES.some((a) => a.key === "road_trip"), false, "road trip should not appear as a normal activity chip");
+});
+
+test("roadTripSeedTarget is unaffected by the stress-adjacent Neuroticism cap", () => {
+  const calm = roadTripSeedTarget({ ...NEUTRAL, N: 0.9 });
+  const base = roadTripSeedTarget(NEUTRAL);
+  assert.equal(calm.bpmMax, base.bpmMax, "road trip isn't a stress-adjacent activity, N alone shouldn't cap it");
+});
+
+test("roadTripSeedTarget applies a combined mood+weather+terrain shift the same way seedTarget does", () => {
+  const base = roadTripSeedTarget(NEUTRAL, 0);
+  const shifted = roadTripSeedTarget(NEUTRAL, 9); // e.g. mountainous terrain's shift
+  assert.equal(shifted.bpmMin, base.bpmMin + 9);
 });
