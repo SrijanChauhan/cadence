@@ -12,6 +12,13 @@
    - `LASTFM_API_KEY` = your key from last.fm/api/account/create (free, personal use) —
      powers real similar-artist blending. Optional: without it, that step
      just skips (no crash), same as GetSongBPM without a key.
+   - `GA4_MEASUREMENT_ID` / `GA4_API_SECRET` = from a GA4 property at
+     analytics.google.com — create a Data Stream, then Admin → Data Streams →
+     [stream] → Measurement Protocol API secrets to generate the secret.
+     Powers funnel tracking (see `engine/analytics.js`). Optional: without
+     both set, `POST /analytics` just no-ops (`{ sent: false }`), same
+     graceful-degradation pattern as the keys above — the app never crashes
+     or blocks on analytics either way.
 5. Deploy. Render gives you a URL like `https://cadence-xyz.onrender.com`.
 6. Put that URL in the app: `src/config.js` → `BACKEND_URL`.
 

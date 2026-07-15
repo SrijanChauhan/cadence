@@ -127,11 +127,12 @@ flowchart TD
   - `src/theme.js`, `src/traits.js` — shared theme presets and Big Five trait metadata
   - `src/SessionBanner.js`, `src/CoverArt.js` — generated mood/weather art, on-screen banner and the square Spotify cover composition
   - `src/engine/` — `bayes` (re-ranking, stays on-device), `spotify` (OAuth + playlist save + top-artist fetch, stays on-device), `appleMusic` (single-track deep link)
+  - `src/analytics.js` — funnel event tracking, relayed through the backend (see Analytics below)
   - `src/config.js` — points the client at the deployed backend URL
   - `V3-ACTION-PLAN.md` — path to full-song in-app playback (Spotify Remote SDK + dev build)
 - `server/` — the Express backend (deploy target: Render, see `server/DEPLOY.md`)
-  - `index.js` — the `POST /recommend` pipeline, plus `POST /roadtrip` for Road Trip mode
-  - `engine/` — `seedEngine` (also exports `roadTripSeedTarget`), `moodEngine`, `weather`, `musicProvider` (iTunes search, junk filter, dedup, BPM proximity sort), `itunes`, `appleMusicResolve` (availability verification), `getSongBpm`, `lastfm`, `routing` (geocoding, real driving routes, terrain-from-elevation classification — all free/no-key, backing Road Trip mode)
+  - `index.js` — the `POST /recommend` pipeline, plus `POST /roadtrip` for Road Trip mode and `POST /analytics` for the GA4 relay
+  - `engine/` — `seedEngine` (also exports `roadTripSeedTarget`), `moodEngine`, `weather`, `musicProvider` (iTunes search, junk filter, dedup, BPM proximity sort), `itunes`, `appleMusicResolve` (availability verification), `getSongBpm`, `lastfm`, `routing` (geocoding, real driving routes, terrain-from-elevation classification — all free/no-key, backing Road Trip mode), `analytics` (GA4 Measurement Protocol relay)
 - `docs/` — product spec and technical appendices
 - `CLAUDE.md` — architecture/instructions for AI-assisted development on this repo; the most current single source of truth for how the pieces fit together
 
@@ -199,6 +200,22 @@ cd server && npm test
 - **Last.fm** is the free source for real similar-artist data now that Spotify's is gone — `artist.getSimilar`, free API key for personal use.
 - **Open-Meteo's geocoding API** matches against a bare place-name field — it returns zero results for the "City, State" format people naturally type (e.g. "San Francisco, CA" fails outright even though "San Francisco" alone finds it instantly). `routing.js`'s `geocodePlace` retries with just the part before the first comma when the full string comes up empty.
 - **OSRM's public demo routing server** (`router.project-osrm.org`) gives real driving distance/duration/geometry for free with no key, but it's explicitly not meant for production load — shared, rate-limited, can be slow or flaky. Fine for personal use; a real deployment would want self-hosted OSRM or a paid routing provider.
+
+## Analytics
+
+Funnel tracking via GA4's Measurement Protocol (plain HTTPS, no SDK — works from Expo Go with zero native dependencies, unlike `@react-native-firebase/analytics`, which needs a dev build). The client never talks to GA4 directly: `app/src/analytics.js`'s `track()` calls the backend's `POST /analytics`, which forwards to GA4 using `GA4_MEASUREMENT_ID`/`GA4_API_SECRET` (Render env vars — see `server/DEPLOY.md`) — the API secret must never ship in the client bundle, the same reasoning as every other key in this app staying server-side only. A stable per-device UUID (persisted in AsyncStorage) stands in for GA4's client ID, since the app has no user accounts. Without both env vars set, every call just no-ops (`{ sent: false }`) — analytics is never allowed to block or crash a real feature.
+
+Events tracked, in funnel order:
+1. `app_open` — every launch
+2. `onboarding_start` → `quiz_started` → `onboarding_complete` / `onboarding_skipped` (`from: "intro"` or `"quiz"`)
+3. `activity_picked` (`activity` — includes `"road_trip"`)
+4. `mood_submitted` / `mood_skipped`
+5. `playlist_loaded` (`track_count`, `is_refresh`)
+6. `track_played`, `track_liked`, `track_skipped`, `track_completed`, `track_opened_apple_music`
+7. `refresh_playlist` (`refresh_number`)
+8. `spotify_save_attempt` → `spotify_save_success` / `spotify_save_fail` (`save_context`: `"queue"`, `"my_picks"`, or `"road_trip"`)
+
+That ordering is exactly what a GA4 funnel exploration report should be built from, to see where people actually drop off — e.g. onboarding_start → onboarding_complete for quiz completion rate, or activity_picked → spotify_save_success for the full conversion.
 
 ## Known limitations
 - Full songs play only after saving to Spotify (or via the deferred in-app dev-build path); in-app playback is 30s previews.

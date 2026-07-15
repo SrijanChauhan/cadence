@@ -26,6 +26,7 @@ import { searchAcrossGenres } from "./engine/musicProvider.js";
 import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
 import { getSimilarArtists } from "./engine/lastfm.js";
 import { geocodePlace, getRoute, classifyTerrain, TERRAIN_BPM_SHIFT } from "./engine/routing.js";
+import { sendEvent } from "./engine/analytics.js";
 
 const app = express();
 app.use(cors());
@@ -34,6 +35,22 @@ app.use(express.json());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/activities", (_req, res) => res.json(ACTIVITIES));
+
+/**
+ * POST /analytics
+ * body: { clientId: string, name: string, params?: object }
+ * Relays a single GA4 event — see engine/analytics.js for why this goes
+ * through the backend rather than the client calling GA4 directly. Never
+ * fails loudly: the client fires this without awaiting the result, so it
+ * always responds 200 (with { sent: false } when GA4 isn't configured or
+ * the forward failed) rather than surfacing analytics plumbing as a real
+ * error to a caller that isn't checking for one.
+ */
+app.post("/analytics", async (req, res) => {
+  const { clientId, name, params } = req.body || {};
+  const result = await sendEvent({ clientId, name, params });
+  res.json(result);
+});
 
 /**
  * POST /recommend

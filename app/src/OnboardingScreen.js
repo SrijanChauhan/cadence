@@ -4,6 +4,7 @@ import {
 } from "react-native";
 import { useTheme } from "./theme";
 import { TRAITS, DESC, bucket } from "./traits";
+import { track } from "./analytics";
 
 /**
  * Cadence — Onboarding (Bounce edition)
@@ -94,6 +95,10 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
 
   useEffect(() => () => clearTimeout(advanceTimeout.current), []);
 
+  // this component only mounts when there's no saved profile yet — reaching
+  // it at all is the actual funnel step worth measuring, not just launching
+  useEffect(() => { track("onboarding_start"); }, []);
+
   const answer = (v) => {
     const next = [...answers];
     next[idx] = v;
@@ -136,13 +141,21 @@ export default function OnboardingScreen({ onComplete, onSkip }) {
     setScreen("intro");
   };
 
+  // Skip fires from two different screens (Intro's link, Quiz's corner
+  // button) — wrapped here rather than inside track() calls at each render
+  // site further down, so the funnel can tell which one a dropoff happened at.
+  const skipFrom = (screenName) => () => { track("onboarding_skipped", { from: screenName }); onSkip(); };
+  const completeFrom = (vector) => { track("onboarding_complete"); onComplete(vector); };
+
   return (
     <View style={s.root}>
-      {screen === "intro" && <Intro s={s} onStart={() => setScreen("quiz")} onSkip={onSkip} />}
-      {screen === "quiz" && (
-        <Quiz s={s} idx={idx} items={quizItems} answers={answers} onAnswer={answer} onBack={back} onSkip={onSkip} />
+      {screen === "intro" && (
+        <Intro s={s} onStart={() => { track("quiz_started"); setScreen("quiz"); }} onSkip={onSkip ? skipFrom("intro") : undefined} />
       )}
-      {screen === "results" && <Results s={s} data={scores()} onRestart={restart} onComplete={onComplete} />}
+      {screen === "quiz" && (
+        <Quiz s={s} idx={idx} items={quizItems} answers={answers} onAnswer={answer} onBack={back} onSkip={onSkip ? skipFrom("quiz") : undefined} />
+      )}
+      {screen === "results" && <Results s={s} data={scores()} onRestart={restart} onComplete={onComplete ? completeFrom : undefined} />}
     </View>
   );
 }

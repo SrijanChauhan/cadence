@@ -15,6 +15,7 @@ import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
 import { useTheme } from "./theme";
+import { track as trackEvent } from "./analytics";
 
 /**
  * Cadence — Playlist screen
@@ -153,6 +154,7 @@ export default function PlaylistScreen({ traits }) {
   const activityLabel = () => (activity === "road_trip" ? "Road Trip" : ACTIVITIES.find((a) => a.key === activity)?.label);
 
   const onPickActivity = (key) => {
+    trackEvent("activity_picked", { activity: key });
     if (!moodAskedThisSession.current) {
       setPendingActivity(key);
       setSelectedBubbles([]);
@@ -171,6 +173,7 @@ export default function PlaylistScreen({ traits }) {
   // (see roadTripFormOpen below) — pendingActivity === "road_trip" is what
   // tells confirmMood/skipMood to call loadRoadTrip instead of load().
   const confirmMood = () => {
+    trackEvent("mood_submitted", { activity: pendingActivity, bubble_count: selectedBubbles.length, has_text: !!extraFeeling.trim() });
     moodAskedThisSession.current = true;
     setMoodPromptOpen(false);
     if (pendingActivity === "road_trip") {
@@ -181,6 +184,7 @@ export default function PlaylistScreen({ traits }) {
   };
 
   const skipMood = () => {
+    trackEvent("mood_skipped", { activity: pendingActivity });
     moodAskedThisSession.current = true;
     setMoodPromptOpen(false);
     if (pendingActivity === "road_trip") {
@@ -201,6 +205,7 @@ export default function PlaylistScreen({ traits }) {
   const submitRoadTripForm = () => {
     const from = fromInput.trim(), to = toInput.trim();
     if (!from || !to) return;
+    trackEvent("activity_picked", { activity: "road_trip" });
     setRoadTripFormOpen(false);
     lastRoadTrip.current = { from, to };
     if (!moodAskedThisSession.current) {
@@ -291,6 +296,7 @@ export default function PlaylistScreen({ traits }) {
       setWeather(json.weather || null);
       setPlace(json.place || null);
       setTracks(rankTracks(merged, buckets.current[act]));
+      trackEvent("playlist_loaded", { activity: act, track_count: json.tracks.length, is_refresh: excludeIds.length > 0 });
 
       // accumulate into the cumulative seen-set (merged already includes any
       // queue-restored tracks, not just this response's own tracks/reserve)
@@ -353,6 +359,7 @@ export default function PlaylistScreen({ traits }) {
       // under the weather line — "from → to" reads naturally there
       setPlace(json.route ? `${json.route.from} → ${json.route.to}` : null);
       setTracks(rankTracks(json.tracks, buckets.current.road_trip));
+      trackEvent("playlist_loaded", { activity: "road_trip", track_count: json.tracks.length, is_refresh: excludeIds.length > 0, terrain: json.route?.terrain });
 
       json.tracks.forEach((t) => seenTrackIds.current.add(t.id));
       (json.reserve || []).forEach((t) => seenTrackIds.current.add(t.id));
@@ -370,6 +377,7 @@ export default function PlaylistScreen({ traits }) {
   // genuinely different tracks instead of eventually cycling back.
   const refreshPlaylist = () => {
     if (refreshCount >= MAX_REFRESHES || loading) return;
+    trackEvent("refresh_playlist", { activity, refresh_number: refreshCount + 1 });
     setRefreshCount((c) => c + 1);
     if (activity === "road_trip" && lastRoadTrip.current) {
       loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, undefined, [...seenTrackIds.current]);
@@ -387,6 +395,7 @@ export default function PlaylistScreen({ traits }) {
       sound.current = sd;
       setPlayingId(track.id);
       playStart.current = Date.now();
+      trackEvent("track_played", { activity });
       sd.setOnPlaybackStatusUpdate((st) => {
         if (st.didJustFinish) { giveFeedback(track, "complete"); advanceQueue(track.id); }
       });
@@ -417,6 +426,13 @@ export default function PlaylistScreen({ traits }) {
     buckets.current[activity] = updateBucket(buckets.current[activity], track.bpm, type);
     AsyncStorage.setItem(`cadence:bayes:${activity}`, JSON.stringify(buckets.current[activity])).catch(() => {});
     setTracks((ts) => rankTracks(ts, buckets.current[activity]));
+    // shared choke point for like/skip/complete/save — every engagement
+    // signal that feeds the Bayesian re-ranker also doubles as a funnel event
+    const eventName = type.indexOf("skip") === 0 ? "track_skipped"
+      : type === "like" ? "track_liked"
+      : type === "save" ? "track_opened_apple_music"
+      : "track_completed";
+    trackEvent(eventName, { activity, feedback_type: type });
   };
 
   const addToMyPicks = (track) => {
@@ -544,12 +560,13 @@ export default function PlaylistScreen({ traits }) {
   };
 
   const saveToSpotify = async () => {
+    trackEvent("spotify_save_attempt", { save_context: "queue", track_count: queue.length });
     try {
       if (!hasSpotifyAuth()) {
         setSaveState("connecting"); setSaveMsg("Opening Spotify sign-in…");
         const ok = await connectSpotify();
         setSpotifyConnected(ok && hasSpotifyAuth());
-        if (!ok) { setSaveState("error"); setSaveMsg("Spotify sign-in was cancelled."); return; }
+        if (!ok) { setSaveState("error"); setSaveMsg("Spotify sign-in was cancelled."); trackEvent("spotify_save_fail", { save_context: "queue", reason: "auth_cancelled" }); return; }
       }
       setSaveState("saving"); setSaveMsg("Building your Spotify playlist…");
       const list = queue.map((id) => tracks.find((t) => t.id === id)).filter(Boolean);
@@ -572,8 +589,10 @@ export default function PlaylistScreen({ traits }) {
       setSaveMsg(
         `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
       );
+      trackEvent("spotify_save_success", { save_context: "queue", matched_count: matchedCount, total_count: totalCount });
     } catch (e) {
       setSaveState("error"); setSaveMsg(e.message || "Couldn't save to Spotify.");
+      trackEvent("spotify_save_fail", { save_context: "queue", reason: e.message || "unknown" });
     }
   };
 
@@ -582,12 +601,13 @@ export default function PlaylistScreen({ traits }) {
   // favourites strip as its own Spotify playlist, independent of whichever
   // single activity's queue is currently open.
   const saveMyPicksToSpotify = async () => {
+    trackEvent("spotify_save_attempt", { save_context: "my_picks", track_count: myPicks.length });
     try {
       if (!hasSpotifyAuth()) {
         setPicksSaveState("connecting"); setPicksSaveMsg("Opening Spotify sign-in…");
         const ok = await connectSpotify();
         setSpotifyConnected(ok && hasSpotifyAuth());
-        if (!ok) { setPicksSaveState("error"); setPicksSaveMsg("Spotify sign-in was cancelled."); return; }
+        if (!ok) { setPicksSaveState("error"); setPicksSaveMsg("Spotify sign-in was cancelled."); trackEvent("spotify_save_fail", { save_context: "my_picks", reason: "auth_cancelled" }); return; }
       }
       setPicksSaveState("saving"); setPicksSaveMsg("Building your Spotify playlist…");
       const list = myPicks;
@@ -610,8 +630,10 @@ export default function PlaylistScreen({ traits }) {
       setPicksSaveMsg(
         `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
       );
+      trackEvent("spotify_save_success", { save_context: "my_picks", matched_count: matchedCount, total_count: totalCount });
     } catch (e) {
       setPicksSaveState("error"); setPicksSaveMsg(e.message || "Couldn't save to Spotify.");
+      trackEvent("spotify_save_fail", { save_context: "my_picks", reason: e.message || "unknown" });
     }
   };
 
@@ -623,12 +645,13 @@ export default function PlaylistScreen({ traits }) {
   // accumulate-as-you-go queue like the other activities, so completing the
   // trip playlist means completing all of it.
   const saveRoadTripToSpotify = async () => {
+    trackEvent("spotify_save_attempt", { save_context: "road_trip", track_count: tracks.length });
     try {
       if (!hasSpotifyAuth()) {
         setTripSaveState("connecting"); setTripSaveMsg("Opening Spotify sign-in…");
         const ok = await connectSpotify();
         setSpotifyConnected(ok && hasSpotifyAuth());
-        if (!ok) { setTripSaveState("error"); setTripSaveMsg("Spotify sign-in was cancelled."); return; }
+        if (!ok) { setTripSaveState("error"); setTripSaveMsg("Spotify sign-in was cancelled."); trackEvent("spotify_save_fail", { save_context: "road_trip", reason: "auth_cancelled" }); return; }
       }
       setTripSaveState("saving"); setTripSaveMsg("Building your road trip playlist…");
       const list = tracks;
@@ -653,8 +676,10 @@ export default function PlaylistScreen({ traits }) {
       setTripSaveMsg(
         `Saved ${matchedCount}/${totalCount} tracks to Spotify${coverUploaded ? " with cover art" : ""}. Open Spotify → Library.`
       );
+      trackEvent("spotify_save_success", { save_context: "road_trip", matched_count: matchedCount, total_count: totalCount });
     } catch (e) {
       setTripSaveState("error"); setTripSaveMsg(e.message || "Couldn't save to Spotify.");
+      trackEvent("spotify_save_fail", { save_context: "road_trip", reason: e.message || "unknown" });
     }
   };
 
