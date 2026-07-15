@@ -169,8 +169,8 @@ export default function PlaylistScreen({ traits }) {
     setSelectedBubbles((sel) => sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label]);
   };
 
-  // Road Trip has its own from/to form ahead of the shared mood prompt
-  // (see roadTripFormOpen below) — pendingActivity === "road_trip" is what
+  // Road Trip has its own from/to form (on its own full-screen page) ahead
+  // of the shared mood prompt — pendingActivity === "road_trip" is what
   // tells confirmMood/skipMood to call loadRoadTrip instead of load().
   const confirmMood = () => {
     trackEvent("mood_submitted", { activity: pendingActivity, bubble_count: selectedBubbles.length, has_text: !!extraFeeling.trim() });
@@ -194,19 +194,32 @@ export default function PlaylistScreen({ traits }) {
     }
   };
 
-  const [roadTripFormOpen, setRoadTripFormOpen] = useState(false);
+  // Road Trip is its own full-screen page (see the roadTripPageOpen block in
+  // the render below), not a modal over the main feed — closing it just
+  // hides the page without clearing the loaded trip, so reopening shows the
+  // same journey instead of forcing a re-plan.
+  const [roadTripPageOpen, setRoadTripPageOpen] = useState(false);
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [route, setRoute] = useState(null); // { from, to, distanceKm, durationMin, terrain }
   const lastRoadTrip = useRef(null); // { from, to } — reused by confirmMood/skipMood/refresh
 
-  const openRoadTripForm = () => { setFromInput(""); setToInput(""); setRoadTripFormOpen(true); };
+  const openRoadTripPage = () => {
+    // If a different activity ran in between (tracks/target/route are all
+    // shared state, not duplicated per-activity), the previously loaded
+    // route no longer matches whatever's sitting in tracks/target — reset
+    // to a fresh form rather than show a journey next to a mismatched
+    // playlist. Reopening the SAME still-active trip (no other activity
+    // picked in between) skips this and shows exactly where you left off.
+    if (activity !== "road_trip") { setFromInput(""); setToInput(""); setRoute(null); }
+    setRoadTripPageOpen(true);
+  };
+  const closeRoadTripPage = () => setRoadTripPageOpen(false);
 
   const submitRoadTripForm = () => {
     const from = fromInput.trim(), to = toInput.trim();
     if (!from || !to) return;
     trackEvent("activity_picked", { activity: "road_trip" });
-    setRoadTripFormOpen(false);
     lastRoadTrip.current = { from, to };
     if (!moodAskedThisSession.current) {
       setPendingActivity("road_trip");
@@ -692,6 +705,30 @@ export default function PlaylistScreen({ traits }) {
     return null;
   })();
 
+  // Shared by both the main feed and the Road Trip page's track list —
+  // same play/like/remove handlers either way.
+  const renderTrackRow = (t) => {
+    const fb = feedback[t.id];
+    return (
+      <View key={t.id} style={[s.row, fb && fb.indexOf("skip") === 0 && s.rowSkipped]}>
+        {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+        <View style={{ flex: 1 }}>
+          <Text style={s.title} numberOfLines={1}>{t.title}</Text>
+          <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
+        </View>
+        <Pressable style={s.iconBtn} onPress={() => play(t)}>
+          <Text style={[s.icon, playingId === t.id && s.iconVolt]}>{playingId === t.id ? "❚❚" : "▶"}</Text>
+        </Pressable>
+        <Pressable style={s.iconBtn} onPress={() => toggleLike(t)}>
+          <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"♥"}</Text>
+        </Pressable>
+        <Pressable style={s.iconBtn} onPress={() => removeTrack(t)}>
+          <Text style={s.icon}>{"✕"}</Text>
+        </Pressable>
+      </View>
+    );
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
     <ScrollView style={s.root} contentContainerStyle={{ paddingBottom: nowPlaying ? 96 : 44 }}>
@@ -714,12 +751,15 @@ export default function PlaylistScreen({ traits }) {
         ))}
         {/* Not a chip among the six above on purpose — it opens a from/to
             form instead of loading immediately on tap. */}
-        <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripForm}>
+        <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripPage}>
           <Text style={[s.chipText, activity === "road_trip" && s.chipTextActive]}>Road Trip</Text>
         </Pressable>
       </View>
 
-      {target && (
+      {/* Road Trip's banner/target/tracks/save all live on its own
+          full-screen page instead (see roadTripPageOpen below) — this main
+          feed is exclusively the six regular activities. */}
+      {target && activity !== "road_trip" && (
         <SessionBanner
           ref={bannerRef}
           mood={mood}
@@ -734,6 +774,8 @@ export default function PlaylistScreen({ traits }) {
         // a dedicated square composition for the Spotify cover upload, kept
         // separate from the wide on-screen banner above. Never visible to
         // the user; stays in sync with mood/weather/place as they change.
+        // Stays unconditional regardless of activity — every save path,
+        // including the Road Trip page's, reads from this same ref.
         <View style={s.coverArtOffscreen} pointerEvents="none">
           <CoverArt
             ref={coverArtRef}
@@ -745,7 +787,7 @@ export default function PlaylistScreen({ traits }) {
         </View>
       )}
 
-      {target && (
+      {target && activity !== "road_trip" && (
         <View style={s.targetRow}>
           <View style={{ flex: 1 }}>
             <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
@@ -756,35 +798,6 @@ export default function PlaylistScreen({ traits }) {
               <BounceNumber value={`${Math.round(post.lambda * 100)}`} style={s.lambdaNum} />
               <Text style={s.lambdaLabel}>% PERSONALITY</Text>
             </View>
-          )}
-        </View>
-      )}
-
-      {activity === "road_trip" && route && (
-        <View style={s.routeBox}>
-          <Text style={s.routeLine}>
-            {Math.round(route.distanceKm)} km · ~{Math.round(route.durationMin)} min · {route.terrain.charAt(0).toUpperCase() + route.terrain.slice(1)} terrain
-          </Text>
-        </View>
-      )}
-
-      {activity === "road_trip" && tracks.length > 0 && (
-        // The whole batch is sized to the trip's driving duration and is
-        // meant to be the complete trip playlist, not a queue built up by
-        // favouriting individual tracks — so this saves everything shown,
-        // not just liked tracks, right where the batch first appears.
-        <View style={{ marginBottom: 16 }}>
-          <Pressable
-            style={[s.picksSaveBtn, (tripSaveState === "saving" || tripSaveState === "connecting") && s.refreshBtnMaxed]}
-            onPress={saveRoadTripToSpotify}
-            disabled={tripSaveState === "saving" || tripSaveState === "connecting"}
-          >
-            <Text style={s.picksSaveBtnText}>
-              {tripSaveState === "saving" ? "SAVING…" : tripSaveState === "connecting" ? "CONNECTING…" : `COMPLETE ROAD TRIP PLAYLIST → SPOTIFY (${tracks.length})`}
-            </Text>
-          </Pressable>
-          {!!tripSaveMsg && (
-            <Text style={[s.saveMsg, tripSaveState === "error" && s.saveMsgError]}>{tripSaveMsg}</Text>
           )}
         </View>
       )}
@@ -815,54 +828,31 @@ export default function PlaylistScreen({ traits }) {
         <Text style={[s.saveMsg, picksSaveState === "error" && s.saveMsgError]}>{picksSaveMsg}</Text>
       )}
 
-      {loading && (
+      {loading && activity !== "road_trip" && (
         <View style={{ marginTop: 26, alignItems: "center" }}>
           <ActivityIndicator color={theme.accent} />
           <Text style={s.loadingNote}>tuning to you…</Text>
         </View>
       )}
-      {error && (
+      {error && activity !== "road_trip" && (
         <View>
           <Text style={s.error}>{error}</Text>
-          {activity === "road_trip" && lastRoadTrip.current && (
-            <Pressable style={s.retry} onPress={() => loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to)}><Text style={s.retryText}>RETRY</Text></Pressable>
-          )}
-          {activity && activity !== "road_trip" && <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>}
+          <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>
         </View>
       )}
-      {diag.length > 0 && (error || loading) && (
+      {diag.length > 0 && (error || loading) && activity !== "road_trip" && (
         <View style={s.diagBox}>{diag.map((d, i) => (<Text key={i} style={s.diagLine}>{'\u203a'} {d}</Text>))}</View>
       )}
 
-      {tracks.map((t) => {
-        const fb = feedback[t.id];
-        return (
-          <View key={t.id} style={[s.row, fb && fb.indexOf("skip") === 0 && s.rowSkipped]}>
-            {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
-            <View style={{ flex: 1 }}>
-              <Text style={s.title} numberOfLines={1}>{t.title}</Text>
-              <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  \u00b7  " + Math.round(t.bpm) + " BPM" : ""}</Text>
-            </View>
-            <Pressable style={s.iconBtn} onPress={() => play(t)}>
-              <Text style={[s.icon, playingId === t.id && s.iconVolt]}>{playingId === t.id ? "\u275a\u275a" : "\u25b6"}</Text>
-            </Pressable>
-            <Pressable style={s.iconBtn} onPress={() => toggleLike(t)}>
-              <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"\u2665"}</Text>
-            </Pressable>
-            <Pressable style={s.iconBtn} onPress={() => removeTrack(t)}>
-              <Text style={s.icon}>{"\u2715"}</Text>
-            </Pressable>
-          </View>
-        );
-      })}
+      {activity !== "road_trip" && tracks.map(renderTrackRow)}
 
-      {tracks.length > 0 && (
+      {tracks.length > 0 && activity !== "road_trip" && (
         <Text style={s.footnote}>
           Favourite queues a track. Remove swaps in a fresh one automatically. Tap the queue icon in the bar below to see the queue and save it.
         </Text>
       )}
 
-      {activity && tracks.length > 0 && (
+      {activity && activity !== "road_trip" && tracks.length > 0 && (
         // Re-fetches this activity's pool from scratch, excluding everything
         // shown so far this session. Deliberately does NOT touch myPicks —
         // that store is fully decoupled from `tracks`/`feedback` (see
@@ -961,40 +951,125 @@ export default function PlaylistScreen({ traits }) {
       </Pressable>
     )}
 
-    {roadTripFormOpen && (
-      <Pressable style={s.moodOverlay} onPress={Keyboard.dismiss}>
-        <View style={s.moodCard}>
-          <Text style={s.moodKicker}>ROAD TRIP</Text>
-          <Text style={s.moodQ}>Where are you headed?</Text>
-          <Text style={s.moodSub}>Distance, driving time, and terrain along the route all shape the playlist.</Text>
-          <TextInput
-            style={[s.moodInput, { minHeight: 0 }]}
-            placeholder="From (e.g. San Francisco, CA)"
-            placeholderTextColor="#5A5A5A"
-            value={fromInput}
-            onChangeText={setFromInput}
-            returnKeyType="next"
-          />
-          <TextInput
-            style={[s.moodInput, { minHeight: 0 }]}
-            placeholder="To (e.g. Los Angeles, CA)"
-            placeholderTextColor="#5A5A5A"
-            value={toInput}
-            onChangeText={setToInput}
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={Keyboard.dismiss}
-          />
-          <Pressable
-            style={[s.moodGo, (!fromInput.trim() || !toInput.trim()) && s.refreshBtnMaxed]}
-            onPress={submitRoadTripForm}
-            disabled={!fromInput.trim() || !toInput.trim()}
-          >
-            <Text style={s.moodGoText}>PLAN TRIP</Text>
+    {roadTripPageOpen && (
+      <View style={s.roadTripPage}>
+        <View style={s.header}>
+          <Pressable onPress={closeRoadTripPage} hitSlop={12} style={s.headerBackBtn}>
+            <Text style={s.headerBack}>Close</Text>
           </Pressable>
-          <Pressable onPress={() => setRoadTripFormOpen(false)} hitSlop={12}><Text style={s.moodSkip}>Cancel</Text></Pressable>
+          <View style={s.headerTitleWrap} pointerEvents="none">
+            <Text style={s.headerTitle}>ROAD TRIP</Text>
+          </View>
         </View>
-      </Pressable>
+
+        {!route ? (
+          <View style={s.roadTripFormBody}>
+            <Text style={s.moodQ}>Where are you headed?</Text>
+            <Text style={s.moodSub}>Distance, driving time, and terrain along the route all shape the playlist.</Text>
+            <TextInput
+              style={[s.moodInput, { minHeight: 0 }]}
+              placeholder="From (e.g. San Francisco, CA)"
+              placeholderTextColor="#5A5A5A"
+              value={fromInput}
+              onChangeText={setFromInput}
+              returnKeyType="next"
+            />
+            <TextInput
+              style={[s.moodInput, { minHeight: 0 }]}
+              placeholder="To (e.g. Los Angeles, CA)"
+              placeholderTextColor="#5A5A5A"
+              value={toInput}
+              onChangeText={setToInput}
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
+            />
+            <Pressable
+              style={[s.moodGo, (!fromInput.trim() || !toInput.trim() || loading) && s.refreshBtnMaxed]}
+              onPress={submitRoadTripForm}
+              disabled={!fromInput.trim() || !toInput.trim() || loading}
+            >
+              <Text style={s.moodGoText}>PLAN TRIP</Text>
+            </Pressable>
+            {loading && (
+              <View style={{ marginTop: 26, alignItems: "center" }}>
+                <ActivityIndicator color={theme.accent} />
+                <Text style={s.loadingNote}>mapping the drive…</Text>
+              </View>
+            )}
+            {error && <Text style={s.error}>{error}</Text>}
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={s.roadTripBody} showsVerticalScrollIndicator={false}>
+            <View style={s.journeyStrip}>
+              <Text style={s.journeyPlace} numberOfLines={1}>{route.from}</Text>
+              <Text style={s.journeyArrow}>→</Text>
+              <Text style={s.journeyPlace} numberOfLines={1}>{route.to}</Text>
+            </View>
+            <Text style={s.routeLine}>
+              {Math.round(route.distanceKm)} km · ~{Math.round(route.durationMin)} min · {route.terrain.charAt(0).toUpperCase() + route.terrain.slice(1)} terrain
+            </Text>
+
+            {/* the "feeling placard" — same generated mood/weather art as
+                every other activity's session banner */}
+            {target && <SessionBanner mood={mood} weather={weather} activityLabel="Road Trip" place={null} />}
+
+            {target && (
+              <View style={s.targetRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
+                  <Text style={s.targetUnit}>BPM · Tuned to the Drive</Text>
+                </View>
+              </View>
+            )}
+
+            {tracks.length > 0 && (
+              // Spotify-branded (not the generic volt button) since this is
+              // specifically a Spotify action — same style already used for
+              // the queue's save button, for visual consistency across the app.
+              <Pressable
+                style={s.spotifyBtn}
+                onPress={saveRoadTripToSpotify}
+                disabled={tripSaveState === "saving" || tripSaveState === "connecting"}
+              >
+                <Text style={s.spotifyBtnText}>
+                  {tripSaveState === "saving" ? "SAVING…" : tripSaveState === "connecting" ? "CONNECTING…" : `SAVE TRIP TO SPOTIFY (${tracks.length})`}
+                </Text>
+              </Pressable>
+            )}
+            {!!tripSaveMsg && (
+              <Text style={[s.saveMsg, tripSaveState === "error" && s.saveMsgError]}>{tripSaveMsg}</Text>
+            )}
+
+            {loading && (
+              <View style={{ marginTop: 14, alignItems: "center" }}>
+                <ActivityIndicator color={theme.accent} />
+                <Text style={s.loadingNote}>refreshing…</Text>
+              </View>
+            )}
+            {error && (
+              <View>
+                <Text style={s.error}>{error}</Text>
+                <Pressable style={s.retry} onPress={() => loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to)}><Text style={s.retryText}>RETRY</Text></Pressable>
+              </View>
+            )}
+
+            {tracks.map(renderTrackRow)}
+
+            {tracks.length > 0 && (
+              <Pressable
+                style={[s.refreshBtn, refreshCount >= MAX_REFRESHES && s.refreshBtnMaxed]}
+                onPress={refreshPlaylist}
+                disabled={loading || refreshCount >= MAX_REFRESHES}
+              >
+                <Text style={s.refreshBtnText}>
+                  {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : "REFRESH PLAYLIST"}
+                </Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        )}
+      </View>
     )}
     </View>
   );
@@ -1023,8 +1098,22 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   lambdaNum: { color: VOLT, fontSize: 56, fontWeight: "900", letterSpacing: -2, lineHeight: 58 },
   lambdaLabel: { color: "#6E6E6E", fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
 
-  routeBox: { marginBottom: 14 },
-  routeLine: { color: "#8A8A8A", fontSize: 12, fontWeight: "700" },
+  routeLine: { color: "#8A8A8A", fontSize: 12, fontWeight: "700", marginBottom: 18 },
+
+  // Road Trip's own full-screen page (see roadTripPageOpen) — same
+  // full-overlay pattern ProfileScreen uses, but zIndex 5 rather than 10 so
+  // the now-playing bar/queue panel (zIndex 10) still show on top of it.
+  roadTripPage: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: BG, zIndex: 5 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 54, paddingBottom: 16, position: "relative" },
+  headerBackBtn: { zIndex: 1 },
+  headerBack: { color: "#9A9A9A", fontSize: 13, fontWeight: "700" },
+  headerTitleWrap: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+  headerTitle: { color: "#FFF", fontSize: 12, fontWeight: "900", letterSpacing: 3 },
+  roadTripFormBody: { paddingHorizontal: 22 },
+  roadTripBody: { paddingHorizontal: 22, paddingBottom: 60 },
+  journeyStrip: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
+  journeyPlace: { color: "#FFF", fontSize: 16, fontWeight: "800", flexShrink: 1 },
+  journeyArrow: { color: VOLT, fontSize: 16, fontWeight: "900" },
 
   loadingNote: { color: "#6E6E6E", fontSize: 11.5, marginTop: 8, fontWeight: "600" },
   error: { color: "#FF5A4E", fontSize: 13.5, fontWeight: "700", marginTop: 14, lineHeight: 19 },
@@ -1050,12 +1139,12 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   picksSaveBtn: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 6 },
   picksSaveBtnText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
-  nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
+  nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, flexDirection: "row", alignItems: "center", gap: 10, padding: 10, zIndex: 10 },
   nowCover: { width: 44, height: 44, borderRadius: 12 },
   nowTitle: { color: "#FFF", fontSize: 13.5, fontWeight: "800" },
   nowArtist: { color: "#7A7A7A", fontSize: 11, fontWeight: "600", marginTop: 1 },
 
-  queuePanel: { position: "absolute", left: 12, right: 12, bottom: 82, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 12 },
+  queuePanel: { position: "absolute", left: 12, right: 12, bottom: 82, backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 12, zIndex: 10 },
   queueHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   queueTitle: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900" },
   queueClose: { color: "#7A7A7A", fontSize: 12, fontWeight: "700" },
@@ -1069,7 +1158,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   qTitle: { color: "#EDEDED", fontSize: 13, fontWeight: "700" },
   qArtist: { color: "#7A7A7A", fontSize: 11, marginTop: 1 },
 
-  moodOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000000E6", justifyContent: "center", paddingHorizontal: 24 },
+  moodOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000000E6", justifyContent: "center", paddingHorizontal: 24, zIndex: 20 },
   moodCard: { backgroundColor: SURFACE, borderRadius: 22, borderWidth: 1, borderColor: BORDER, padding: 22 },
   moodKicker: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 10 },
   moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 6 },
