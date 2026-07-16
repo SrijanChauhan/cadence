@@ -117,10 +117,14 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
     .failOffsetY([-10, 10])
     .onUpdate((e) => translateX.setValue(e.translationX))
     .onEnd((e) => {
-      if (Math.abs(e.translationX) > SWIPE_REMOVE_THRESHOLD) {
-        Animated.timing(translateX, {
-          toValue: e.translationX > 0 ? 600 : -600, duration: 180, useNativeDriver: true,
-        }).start(() => onRemove(t));
+      // Right = add to My Picks (same toggle the heart button uses — spring
+      // back to place afterward, since liking doesn't remove the track from
+      // the feed any more than tapping the heart does). Left = remove.
+      if (e.translationX > SWIPE_REMOVE_THRESHOLD) {
+        onToggleLike(t);
+        Animated.spring(translateX, { toValue: 0, friction: 7, useNativeDriver: true }).start();
+      } else if (e.translationX < -SWIPE_REMOVE_THRESHOLD) {
+        Animated.timing(translateX, { toValue: -600, duration: 180, useNativeDriver: true }).start(() => onRemove(t));
       } else {
         Animated.spring(translateX, { toValue: 0, friction: 7, useNativeDriver: true }).start();
       }
@@ -132,20 +136,24 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
 
   const gesture = Gesture.Race(tapGesture, panGesture);
 
-  // A red "X" mark fades in behind the row as it's dragged, on the side
-  // the row is sliding away from — same reveal pattern as iOS's swipe-to-
-  // delete, so the row visibly leaves a red trail rather than just vanishing.
-  const trailOpacity = translateX.interpolate({
-    inputRange: [-SWIPE_REMOVE_THRESHOLD, 0, SWIPE_REMOVE_THRESHOLD],
-    outputRange: [1, 0, 1],
-    extrapolate: "clamp",
-  });
+  // Two trails, one per direction, each fading in only on its own side —
+  // same iOS-style reveal-behind-the-row pattern, but red (remove) on the
+  // left and volt/accent (add to My Picks) on the right, so the color
+  // itself previews which action a swipe is about to commit to.
+  const removeTrailOpacity = translateX.interpolate({ inputRange: [-SWIPE_REMOVE_THRESHOLD, 0], outputRange: [1, 0], extrapolate: "clamp" });
+  const likeTrailOpacity = translateX.interpolate({ inputRange: [0, SWIPE_REMOVE_THRESHOLD], outputRange: [0, 1], extrapolate: "clamp" });
 
   return (
     <View>
-      <View style={s.rowRemoveTrail} pointerEvents="none">
-        <Animated.Text style={[s.rowRemoveTrailIcon, { opacity: trailOpacity }]}>{"✕"}</Animated.Text>
-      </View>
+      {/* Both trails stack in the same absolute position — each backdrop's
+          own opacity (not just its icon's) has to track its direction, or
+          the one rendered on top would always fully hide the other. */}
+      <Animated.View style={[s.rowRemoveTrail, { opacity: removeTrailOpacity }]} pointerEvents="none">
+        <Text style={s.rowRemoveTrailIcon}>{"✕"}</Text>
+      </Animated.View>
+      <Animated.View style={[s.rowLikeTrail, { backgroundColor: theme.accent, opacity: likeTrailOpacity }]} pointerEvents="none">
+        <Text style={s.rowLikeTrailIcon}>{"♥"}</Text>
+      </Animated.View>
       <Animated.View style={[s.row, { backgroundColor: theme.bg }, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
         <GestureDetector gesture={gesture}>
           <View style={s.rowTapArea}>
@@ -1261,6 +1269,8 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   // track leaves a red trail rather than just sliding off silently
   rowRemoveTrail: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#FF5A4E", alignItems: "center", justifyContent: "center" },
   rowRemoveTrailIcon: { color: "#2A0E0E", fontSize: 18, fontWeight: "900" },
+  rowLikeTrail: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+  rowLikeTrailIcon: { color: "#000", fontSize: 18, fontWeight: "900" },
   // wraps just the cover+text (the tap-to-play/swipe-to-remove gesture
   // area) — the heart stays outside this as a plain sibling, see TrackRow
   rowTapArea: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10 },
