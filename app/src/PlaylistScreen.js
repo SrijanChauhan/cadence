@@ -87,21 +87,35 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
 
   const gesture = Gesture.Race(tapGesture, panGesture);
 
+  // A red "X" mark fades in behind the row as it's dragged, on the side
+  // the row is sliding away from — same reveal pattern as iOS's swipe-to-
+  // delete, so the row visibly leaves a red trail rather than just vanishing.
+  const trailOpacity = translateX.interpolate({
+    inputRange: [-SWIPE_REMOVE_THRESHOLD, 0, SWIPE_REMOVE_THRESHOLD],
+    outputRange: [1, 0, 1],
+    extrapolate: "clamp",
+  });
+
   return (
-    <Animated.View style={[s.row, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
-      <GestureDetector gesture={gesture}>
-        <View style={[s.rowTapArea, playing && { backgroundColor: theme.surface }]}>
-          {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
-          <View style={{ flex: 1 }}>
-            <Text style={[s.title, playing && s.iconVolt]} numberOfLines={1}>{t.title}</Text>
-            <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
+    <View>
+      <View style={s.rowRemoveTrail} pointerEvents="none">
+        <Animated.Text style={[s.rowRemoveTrailIcon, { opacity: trailOpacity }]}>{"✕"}</Animated.Text>
+      </View>
+      <Animated.View style={[s.row, { backgroundColor: playing ? theme.surface : theme.bg }, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
+        <GestureDetector gesture={gesture}>
+          <View style={s.rowTapArea}>
+            {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+            <View style={{ flex: 1 }}>
+              <Text style={[s.title, playing && s.iconVolt]} numberOfLines={1}>{t.title}</Text>
+              <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
+            </View>
           </View>
-        </View>
-      </GestureDetector>
-      <Pressable style={s.iconBtn} onPress={() => onToggleLike(t)} hitSlop={8}>
-        <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"♥"}</Text>
-      </Pressable>
-    </Animated.View>
+        </GestureDetector>
+        <Pressable style={s.iconBtn} onPress={() => onToggleLike(t)} hitSlop={8}>
+          <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"♥"}</Text>
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -1190,6 +1204,11 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
 
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#141414" },
   rowSkipped: { opacity: 0.3 },
+  // sits behind the row (row has an opaque background so this is hidden
+  // until swiped) — revealed as the row translates away, so removing a
+  // track leaves a red trail rather than just sliding off silently
+  rowRemoveTrail: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#FF5A4E", alignItems: "center", justifyContent: "center" },
+  rowRemoveTrailIcon: { color: "#2A0E0E", fontSize: 18, fontWeight: "900" },
   // wraps just the cover+text (the tap-to-play/swipe-to-remove gesture
   // area) — the heart stays outside this as a plain sibling, see TrackRow
   rowTapArea: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10 },
