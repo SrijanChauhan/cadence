@@ -749,12 +749,14 @@ export default function PlaylistScreen({ traits }) {
             <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
           </Pressable>
         ))}
-        {/* Not a chip among the six above on purpose — it opens a from/to
-            form instead of loading immediately on tap. */}
-        <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripPage}>
-          <Text style={[s.chipText, activity === "road_trip" && s.chipTextActive]}>Road Trip</Text>
-        </Pressable>
       </View>
+
+      {/* Its own entry, not a seventh chip in the row above — it opens a
+          dedicated from/to page rather than loading immediately on tap,
+          and the row reads better as six flat choices, not seven. */}
+      <Pressable style={[s.roadTripEntry, activity === "road_trip" && s.roadTripEntryActive]} onPress={openRoadTripPage}>
+        <Text style={[s.roadTripEntryText, activity === "road_trip" && s.roadTripEntryTextActive]}>Road Trip →</Text>
+      </Pressable>
 
       {/* Road Trip's banner/target/tracks/save all live on its own
           full-screen page instead (see roadTripPageOpen below) — this main
@@ -1089,6 +1091,11 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
+
+  roadTripEntry: { borderRadius: 14, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 13, alignItems: "center", marginBottom: 18, backgroundColor: SURFACE },
+  roadTripEntryActive: { borderColor: VOLT },
+  roadTripEntryText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
+  roadTripEntryTextActive: { color: VOLT },
 
   targetRow: { flexDirection: "row", gap: 14, alignItems: "flex-start", marginBottom: 14 },
   targetBig: { color: "#FFF", fontSize: 44, fontWeight: "900", letterSpacing: -2, lineHeight: 48 },
