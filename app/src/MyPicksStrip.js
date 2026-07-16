@@ -102,7 +102,7 @@ export default function MyPicksStrip({ picks, onOpenApple, onReorder, onRemove }
   return (
     <View style={s.wrap}>
       <Text style={[s.title, { color: theme.accent }]}>MY PICKS · {picks.length}</Text>
-      <Text style={s.hint}>tap to open · hold to remove · hold + drag to reorder</Text>
+      <Text style={s.hint}>Tap to Open · Hold to Remove · Hold + Drag to Reorder</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         {picks.map((t, i) => (
           <PickTile
