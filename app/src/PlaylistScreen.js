@@ -1112,7 +1112,10 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   // full-overlay pattern ProfileScreen uses, but zIndex 5 rather than 10 so
   // the now-playing bar/queue panel (zIndex 10) still show on top of it.
   roadTripPage: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: BG, zIndex: 5 },
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 54, paddingBottom: 16, position: "relative" },
+  // paddingTop matches App.js's own top bar (14) — this overlay already
+  // sits inside the same SafeAreaView, so it doesn't need extra clearance
+  // stacked on top of the safe-area inset SafeAreaView already applies.
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 14, paddingBottom: 16, position: "relative" },
   headerBackBtn: { zIndex: 1 },
   headerBack: { color: "#9A9A9A", fontSize: 13, fontWeight: "700" },
   headerTitleWrap: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },

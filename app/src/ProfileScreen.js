@@ -193,8 +193,13 @@ function PlaylistDetail({ record }) {
 const s = StyleSheet.create({
   overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000", zIndex: 10 },
   // paddingHorizontal matches body (22) so Close/Back lines up with the
-  // content below it; position:relative anchors the absolutely-centered title
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 54, paddingBottom: 16, position: "relative" },
+  // content below it; position:relative anchors the absolutely-centered
+  // title. paddingTop matches App.js's own top bar (14) — this overlay
+  // already sits inside the same SafeAreaView as that bar, so it doesn't
+  // need extra clearance on top of the safe-area inset SafeAreaView already
+  // applies; the old 54 stacked redundant padding on top of that, pushing
+  // PROFILE/PERSONALITY noticeably lower than CADENCE on the screen behind it.
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 22, paddingTop: 14, paddingBottom: 16, position: "relative" },
   headerBackBtn: { zIndex: 1 },
   headerBack: { color: "#9A9A9A", fontSize: 13, fontWeight: "700" },
   headerTitleWrap: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
