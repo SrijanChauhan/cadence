@@ -751,11 +751,13 @@ export default function PlaylistScreen({ traits }) {
         ))}
       </View>
 
-      {/* Its own entry, not a seventh chip in the row above — it opens a
-          dedicated from/to page rather than loading immediately on tap,
-          and the row reads better as six flat choices, not seven. */}
-      <Pressable style={[s.roadTripEntry, activity === "road_trip" && s.roadTripEntryActive]} onPress={openRoadTripPage}>
-        <Text style={[s.roadTripEntryText, activity === "road_trip" && s.roadTripEntryTextActive]}>Road Trip →</Text>
+      {/* Deliberately a quiet text link, not a bordered button matching the
+          chips' visual weight — Cadence's core experience is context-aware
+          music (personality/activity/mood/weather), and Road Trip is one
+          specific, occasional use of that, not a second thing competing
+          for attention on every visit to this screen. */}
+      <Pressable style={s.roadTripLink} onPress={openRoadTripPage} hitSlop={8}>
+        <Text style={[s.roadTripLinkText, activity === "road_trip" && s.roadTripLinkTextActive]}>Plan a road trip →</Text>
       </Pressable>
 
       {/* Road Trip's banner/target/tracks/save all live on its own
@@ -1092,10 +1094,9 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
 
-  roadTripEntry: { borderRadius: 14, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 13, alignItems: "center", marginBottom: 18, backgroundColor: SURFACE },
-  roadTripEntryActive: { borderColor: VOLT },
-  roadTripEntryText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
-  roadTripEntryTextActive: { color: VOLT },
+  roadTripLink: { alignSelf: "flex-start", marginBottom: 18, paddingVertical: 2 },
+  roadTripLinkText: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
+  roadTripLinkTextActive: { color: VOLT },
 
   targetRow: { flexDirection: "row", gap: 14, alignItems: "flex-start", marginBottom: 14 },
   targetBig: { color: "#FFF", fontSize: 44, fontWeight: "900", letterSpacing: -2, lineHeight: 48 },
