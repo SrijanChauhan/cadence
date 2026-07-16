@@ -1039,7 +1039,7 @@ export default function PlaylistScreen({ traits }) {
         {nowPlaying.cover ? <Image source={{ uri: nowPlaying.cover }} style={s.nowCover} /> : null}
         <View style={{ flex: 1 }}>
           <Text style={s.nowTitle} numberOfLines={1}>{nowPlaying.title}</Text>
-          <Text style={s.nowArtist} numberOfLines={1}>{upNext ? "up next \u00b7 " + upNext.title : nowPlaying.artist + " \u00b7 preview"}</Text>
+          <Text style={s.nowArtist} numberOfLines={1}>{upNext ? "Up Next \u00b7 " + upNext.title : nowPlaying.artist + " \u00b7 Preview"}</Text>
         </View>
         {queueTracks.length > 0 && (
           <Pressable style={s.iconBtn} onPress={() => setQueueOpen((o) => !o)}>
