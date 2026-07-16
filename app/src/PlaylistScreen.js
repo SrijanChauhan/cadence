@@ -121,6 +121,12 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
   const translateX = useRef(new Animated.Value(0)).current;
   const fb = feedback[t.id];
   const playing = playingId === t.id;
+  // t.cover being non-null only means the API gave us a URL, not that it'll
+  // actually load — a dead/expired artwork URL previously just rendered
+  // blank forever with no fallback. onError below catches that and swaps to
+  // the same placeholder box used when there's no cover URL at all.
+  const [coverFailed, setCoverFailed] = useState(false);
+  useEffect(() => { setCoverFailed(false); }, [t.cover]);
 
   const panGesture = Gesture.Pan()
     .activeOffsetX([-10, 10])
@@ -168,7 +174,11 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
         <GestureDetector gesture={gesture}>
           <View style={s.rowTapArea}>
             <View>
-              {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+              {t.cover && !coverFailed ? (
+                <Image source={{ uri: t.cover }} style={s.cover} onError={() => setCoverFailed(true)} />
+              ) : (
+                <View style={[s.cover, s.coverEmpty]} />
+              )}
               {playing && (
                 <View style={s.coverEqOverlay} pointerEvents="none">
                   <Equalizer bpm={t.bpm} />
@@ -202,6 +212,13 @@ export default function PlaylistScreen({ traits }) {
   const [weather, setWeather] = useState(null);
   const [place, setPlace] = useState(null);
   const [playingId, setPlayingId] = useState(null);
+  // Cover URLs that failed to actually load (dead/expired artwork link —
+  // t.cover being non-null only means the API returned a URL, not that it
+  // still resolves). Used by the queue panel and now-playing bar, which
+  // aren't their own components the way TrackRow is, so can't hold this as
+  // local per-row state the same way.
+  const [failedCovers, setFailedCovers] = useState(() => new Set());
+  const markCoverFailed = (url) => setFailedCovers((s) => new Set(s).add(url));
   const [feedback, setFeedback] = useState({});
   const [queue, setQueue] = useState([]);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -1029,7 +1046,11 @@ export default function PlaylistScreen({ traits }) {
           {queueTracks.map((t) => (
             <View key={t.id} style={s.qRow}>
               <Text style={[s.qIndex, t.id === playingId && s.iconVolt]}>{t.id === playingId ? "\u25b6" : "\u2022"}</Text>
-              {t.cover ? <Image source={{ uri: t.cover }} style={s.qCover} /> : <View style={[s.qCover, s.coverEmpty]} />}
+              {t.cover && !failedCovers.has(t.cover) ? (
+                <Image source={{ uri: t.cover }} style={s.qCover} onError={() => markCoverFailed(t.cover)} />
+              ) : (
+                <View style={[s.qCover, s.coverEmpty]} />
+              )}
               <View style={{ flex: 1 }}>
                 <Text style={s.qTitle} numberOfLines={1}>{t.title}</Text>
                 <Text style={s.qArtist} numberOfLines={1}>{t.artist}</Text>
@@ -1046,7 +1067,9 @@ export default function PlaylistScreen({ traits }) {
 
     {nowPlaying && (
       <View style={s.nowBar}>
-        {nowPlaying.cover ? <Image source={{ uri: nowPlaying.cover }} style={s.nowCover} /> : null}
+        {nowPlaying.cover && !failedCovers.has(nowPlaying.cover) ? (
+          <Image source={{ uri: nowPlaying.cover }} style={s.nowCover} onError={() => markCoverFailed(nowPlaying.cover)} />
+        ) : null}
         <View style={{ flex: 1 }}>
           <Text style={s.nowTitle} numberOfLines={1}>{nowPlaying.title}</Text>
           <Text style={s.nowArtist} numberOfLines={1}>{upNext ? "Up Next \u00b7 " + upNext.title : nowPlaying.artist + " \u00b7 Preview"}</Text>
