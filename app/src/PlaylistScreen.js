@@ -61,14 +61,15 @@ const SWIPE_REMOVE_THRESHOLD = 90;
  * tracks without a BPM (not yet enriched, or GetSongBPM had no match) fall
  * back to a 120 BPM feel rather than not animating at all.
  *
- * Colour alternates between the active theme's accent and its true
- * complementary (theme.accent2) rather than one flat colour repeated three
- * times, so the equalizer reflects the theme's actual colour pair and
- * re-colours itself the instant the user switches themes in Profile. */
-function Equalizer({ theme, bpm }) {
+ * Colour is a fixed neutral grey, deliberately NOT tied to the active
+ * theme (unlike almost everything else in this app) — it needs to read
+ * clearly over any album art regardless of which of the four themes is
+ * active, and a theme-matched accent risked blending into art that
+ * happened to share that hue. */
+function Equalizer({ bpm }) {
   const bars = useRef([0, 1, 2].map(() => new Animated.Value(0.3))).current;
   const beatMs = bpm && bpm > 0 ? 60000 / bpm : 500;
-  const colors = [theme.accent, theme.accent2, theme.accent];
+  const colors = ["#B5B5B5", "#8A8A8A", "#B5B5B5"];
 
   useEffect(() => {
     const loops = bars.map((bar, i) => {
@@ -170,7 +171,7 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
               {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
               {playing && (
                 <View style={s.coverEqOverlay} pointerEvents="none">
-                  <Equalizer theme={theme} bpm={t.bpm} />
+                  <Equalizer bpm={t.bpm} />
                 </View>
               )}
             </View>
