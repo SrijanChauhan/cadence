@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput, Keyboard,
 } from "react-native";
 import { Audio } from "expo-av";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { captureRef } from "react-native-view-shot";
@@ -42,6 +43,66 @@ function BounceNumber({ value, style }) {
     Animated.spring(scale, { toValue: 1, friction: 3.2, tension: 140, useNativeDriver: true }).start();
   }, [value]);
   return <Animated.Text style={[style, { transform: [{ scale }] }]}>{value}</Animated.Text>;
+}
+
+const SWIPE_REMOVE_THRESHOLD = 90;
+
+/**
+ * Cadence — track row: tap anywhere to play, swipe to remove, heart to add
+ * to the catalog (My Picks). No separate play/remove icons — the whole row
+ * is the play target, and "not for me" is a physical swipe-away gesture
+ * rather than a tap target, matching how the rest of the interaction model
+ * in this app favors gesture over icon-hunting (see MyPicksStrip's own
+ * tap/hold-drag/hold-still pattern).
+ *
+ * The swipe/tap gesture only wraps the cover+text area, not the whole row —
+ * the heart stays a plain sibling Pressable outside that GestureDetector
+ * subtree, since nesting an interactive Pressable inside a GestureDetector
+ * risks the two fighting over the same touch (the same reason MyPicksStrip
+ * renders its remove-X through a separate top-layer Modal rather than a
+ * Pressable nested inside its own tile gesture).
+ */
+function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggleLike, onRemove }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const fb = feedback[t.id];
+  const playing = playingId === t.id;
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-10, 10])
+    .onUpdate((e) => translateX.setValue(e.translationX))
+    .onEnd((e) => {
+      if (Math.abs(e.translationX) > SWIPE_REMOVE_THRESHOLD) {
+        Animated.timing(translateX, {
+          toValue: e.translationX > 0 ? 600 : -600, duration: 180, useNativeDriver: true,
+        }).start(() => onRemove(t));
+      } else {
+        Animated.spring(translateX, { toValue: 0, friction: 7, useNativeDriver: true }).start();
+      }
+    });
+
+  const tapGesture = Gesture.Tap()
+    .maxDistance(10)
+    .onEnd((_e, success) => { if (success) onPlay(t); });
+
+  const gesture = Gesture.Race(tapGesture, panGesture);
+
+  return (
+    <Animated.View style={[s.row, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
+      <GestureDetector gesture={gesture}>
+        <View style={[s.rowTapArea, playing && { backgroundColor: theme.surface }]}>
+          {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+          <View style={{ flex: 1 }}>
+            <Text style={[s.title, playing && s.iconVolt]} numberOfLines={1}>{t.title}</Text>
+            <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
+          </View>
+        </View>
+      </GestureDetector>
+      <Pressable style={s.iconBtn} onPress={() => onToggleLike(t)} hitSlop={8}>
+        <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"♥"}</Text>
+      </Pressable>
+    </Animated.View>
+  );
 }
 
 export default function PlaylistScreen({ traits }) {
@@ -705,29 +766,23 @@ export default function PlaylistScreen({ traits }) {
     return null;
   })();
 
-  // Shared by both the main feed and the Road Trip page's track list —
-  // same play/like/remove handlers either way.
-  const renderTrackRow = (t) => {
-    const fb = feedback[t.id];
-    return (
-      <View key={t.id} style={[s.row, fb && fb.indexOf("skip") === 0 && s.rowSkipped]}>
-        {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
-        <View style={{ flex: 1 }}>
-          <Text style={s.title} numberOfLines={1}>{t.title}</Text>
-          <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
-        </View>
-        <Pressable style={s.iconBtn} onPress={() => play(t)}>
-          <Text style={[s.icon, playingId === t.id && s.iconVolt]}>{playingId === t.id ? "❚❚" : "▶"}</Text>
-        </Pressable>
-        <Pressable style={s.iconBtn} onPress={() => toggleLike(t)}>
-          <Text style={[s.icon, isMyPick(t.id) && s.iconVolt]}>{"♥"}</Text>
-        </Pressable>
-        <Pressable style={s.iconBtn} onPress={() => removeTrack(t)}>
-          <Text style={s.icon}>{"✕"}</Text>
-        </Pressable>
-      </View>
-    );
-  };
+  // Shared by both the main feed and the Road Trip page's track list — same
+  // play/like/remove handlers either way, see TrackRow above for why tap
+  // plays, swipe removes, and only the heart stays a tappable icon.
+  const renderTrackRow = (t) => (
+    <TrackRow
+      key={t.id}
+      t={t}
+      s={s}
+      theme={theme}
+      feedback={feedback}
+      playingId={playingId}
+      isMyPick={isMyPick}
+      onPlay={play}
+      onToggleLike={toggleLike}
+      onRemove={removeTrack}
+    />
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
@@ -852,7 +907,7 @@ export default function PlaylistScreen({ traits }) {
 
       {tracks.length > 0 && activity !== "road_trip" && (
         <Text style={s.footnote}>
-          Favourite queues a track. Remove swaps in a fresh one automatically. Tap the queue icon in the bar below to see the queue and save it.
+          Tap a track to play. Swipe it away if it's not for you — a fresh one swaps in automatically. Heart to add it to your catalog, then tap the queue icon in the bar below to see it and save.
         </Text>
       )}
 
@@ -1135,6 +1190,9 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
 
   row: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#141414" },
   rowSkipped: { opacity: 0.3 },
+  // wraps just the cover+text (the tap-to-play/swipe-to-remove gesture
+  // area) — the heart stays outside this as a plain sibling, see TrackRow
+  rowTapArea: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10 },
   cover: { width: 46, height: 46, borderRadius: 12 },
   coverEmpty: { backgroundColor: "#141414" },
   title: { color: "#FFF", fontSize: 14.5, fontWeight: "800" },
