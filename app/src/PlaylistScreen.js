@@ -47,6 +47,51 @@ function BounceNumber({ value, style }) {
 
 const SWIPE_REMOVE_THRESHOLD = 90;
 
+/** Three bars bouncing at slightly staggered speeds — the classic "now
+ * playing" music-visualizer glyph. height animates, so useNativeDriver has
+ * to be false here (layout properties can't run on the native thread) —
+ * fine at this size, only three tiny bars looping.
+ *
+ * Tempo-tuned: one full up/down bounce is pinned to the track's own beat
+ * length (60000/bpm ms), not a fixed generic speed, so a 165 BPM workout
+ * track visibly bounces faster than a 60 BPM wind-down one. iTunes-sourced
+ * tracks without a BPM (not yet enriched, or GetSongBPM had no match) fall
+ * back to a 120 BPM feel rather than not animating at all. */
+function Equalizer({ color, bpm }) {
+  const bars = useRef([0, 1, 2].map(() => new Animated.Value(0.35))).current;
+  const beatMs = bpm && bpm > 0 ? 60000 / bpm : 500;
+
+  useEffect(() => {
+    const loops = bars.map((bar, i) => {
+      const half = beatMs / 2 + i * (beatMs * 0.12); // slight per-bar stagger, still tempo-anchored
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(bar, { toValue: 1, duration: half, useNativeDriver: false }),
+          Animated.timing(bar, { toValue: 0.3, duration: half, useNativeDriver: false }),
+        ])
+      );
+    });
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [beatMs]);
+
+  return (
+    <View style={eqStyles.wrap}>
+      {bars.map((bar, i) => (
+        <Animated.View
+          key={i}
+          style={[eqStyles.bar, { backgroundColor: color, height: bar.interpolate({ inputRange: [0, 1], outputRange: ["20%", "100%"] }) }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const eqStyles = StyleSheet.create({
+  wrap: { flexDirection: "row", alignItems: "flex-end", gap: 2.5, height: 16 },
+  bar: { width: 3, borderRadius: 1.5 },
+});
+
 /**
  * Cadence — track row: tap anywhere to play, swipe to remove, heart to add
  * to the catalog (My Picks). No separate play/remove icons — the whole row
@@ -101,10 +146,17 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
       <View style={s.rowRemoveTrail} pointerEvents="none">
         <Animated.Text style={[s.rowRemoveTrailIcon, { opacity: trailOpacity }]}>{"✕"}</Animated.Text>
       </View>
-      <Animated.View style={[s.row, { backgroundColor: playing ? theme.surface : theme.bg }, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
+      <Animated.View style={[s.row, { backgroundColor: theme.bg }, fb && fb.indexOf("skip") === 0 && s.rowSkipped, { transform: [{ translateX }] }]}>
         <GestureDetector gesture={gesture}>
           <View style={s.rowTapArea}>
-            {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+            <View>
+              {t.cover ? <Image source={{ uri: t.cover }} style={s.cover} /> : <View style={[s.cover, s.coverEmpty]} />}
+              {playing && (
+                <View style={s.coverEqOverlay} pointerEvents="none">
+                  <Equalizer color={theme.accent} bpm={t.bpm} />
+                </View>
+              )}
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={[s.title, playing && s.iconVolt]} numberOfLines={1}>{t.title}</Text>
               <Text style={s.artist} numberOfLines={1}>{t.artist}{t.bpm ? "  ·  " + Math.round(t.bpm) + " BPM" : ""}</Text>
@@ -1214,6 +1266,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   rowTapArea: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 10 },
   cover: { width: 46, height: 46, borderRadius: 12 },
   coverEmpty: { backgroundColor: "#141414" },
+  coverEqOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 12, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
   title: { color: "#FFF", fontSize: 14.5, fontWeight: "800" },
   artist: { color: "#7A7A7A", fontSize: 12, marginTop: 2, fontWeight: "600" },
   iconBtn: { padding: 7 },
