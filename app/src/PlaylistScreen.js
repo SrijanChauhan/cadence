@@ -47,14 +47,17 @@ function BounceNumber({ value, style }) {
 
 const SWIPE_REMOVE_THRESHOLD = 90;
 
-/** Three bars bouncing up and down (translateY, not just growing from a
- * fixed baseline) at slightly staggered speeds — the classic "now playing"
- * music-visualizer glyph. Transforms run on the native thread, unlike the
- * height-based version this replaced (layout properties can't).
+/** Three lines growing/shrinking in height (not moving position) at
+ * slightly staggered speeds — the classic "now playing" music-visualizer
+ * glyph. Each bar stays vertically centered in its row (alignItems:
+ * "center" on the wrap) so growing taller pushes both its top and bottom
+ * edge outward symmetrically, rather than the bar's position shifting.
+ * height is a layout property, so this can't use the native driver — fine
+ * at this size, only three tiny bars looping.
  *
- * Tempo-tuned: one full up/down bounce is pinned to the track's own beat
+ * Tempo-tuned: one full grow/shrink cycle is pinned to the track's own beat
  * length (60000/bpm ms), not a fixed generic speed, so a 165 BPM workout
- * track visibly bounces faster than a 60 BPM wind-down one. iTunes-sourced
+ * track visibly moves faster than a 60 BPM wind-down one. iTunes-sourced
  * tracks without a BPM (not yet enriched, or GetSongBPM had no match) fall
  * back to a 120 BPM feel rather than not animating at all.
  *
@@ -63,7 +66,7 @@ const SWIPE_REMOVE_THRESHOLD = 90;
  * times, so the equalizer reflects the theme's actual colour pair and
  * re-colours itself the instant the user switches themes in Profile. */
 function Equalizer({ theme, bpm }) {
-  const bars = useRef([0, 1, 2].map(() => new Animated.Value(-1))).current;
+  const bars = useRef([0, 1, 2].map(() => new Animated.Value(0.3))).current;
   const beatMs = bpm && bpm > 0 ? 60000 / bpm : 500;
   const colors = [theme.accent, theme.accent2, theme.accent];
 
@@ -72,8 +75,8 @@ function Equalizer({ theme, bpm }) {
       const half = beatMs / 2 + i * (beatMs * 0.12); // slight per-bar stagger, still tempo-anchored
       return Animated.loop(
         Animated.sequence([
-          Animated.timing(bar, { toValue: 1, duration: half, useNativeDriver: true }),
-          Animated.timing(bar, { toValue: -1, duration: half, useNativeDriver: true }),
+          Animated.timing(bar, { toValue: 1, duration: half, useNativeDriver: false }),
+          Animated.timing(bar, { toValue: 0.3, duration: half, useNativeDriver: false }),
         ])
       );
     });
@@ -86,10 +89,7 @@ function Equalizer({ theme, bpm }) {
       {bars.map((bar, i) => (
         <Animated.View
           key={i}
-          style={[
-            eqStyles.bar,
-            { backgroundColor: colors[i], transform: [{ translateY: bar.interpolate({ inputRange: [-1, 1], outputRange: [-5, 5] }) }] },
-          ]}
+          style={[eqStyles.bar, { backgroundColor: colors[i], height: bar.interpolate({ inputRange: [0, 1], outputRange: ["25%", "100%"] }) }]}
         />
       ))}
     </View>
