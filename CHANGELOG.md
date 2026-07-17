@@ -112,3 +112,30 @@ points. Grouped by area below; commit hashes reference `main`.
   now-playing bar.
 - Copy polish: capitalized "Up Next" / "Preview" and the My Picks hint
   line; header title centering fix for Profile/Personality/Road Trip.
+
+## Canvas: custom themes + Jigsaw layout editor (2026-07-18)
+
+- **Added a Canvas screen**, behind a new pill button next to Test Again /
+  Theme / Reccos, with two independent tools switched by a tab pair.
+  (`1d587f7`)
+- **Themes tab**: pick a background and a text/accent colour from a
+  curated palette, name it (defaults to "Theme #N"), save it. `theme.js`
+  gained `deriveShades` (hex → HSL → progressively lighter hex) so the
+  creator only has to ask for two colours — surface/border are derived
+  the same "same hue, different lightness" way the six built-in themes
+  already work. Saved themes persist to AsyncStorage and show up in the
+  regular Theme picker alongside the built-ins, not a separate list.
+- **Jigsaw tab**: the main playlist screen's five sections (Mode & Feel,
+  BPM & Personality, My Picks & Save, Song List, Refresh Playlist) can be
+  reordered with up/down controls and saved as a named preset (defaults
+  to "Jigsaw #N"). New `jigsaw.js` provider holds the active order + saved
+  presets; `PlaylistScreen` now renders its main feed by mapping over the
+  active preset's order instead of a fixed sequence. The tap/swipe/heart
+  footnote travels with the Refresh block (not Song List) specifically so
+  it still lands directly under the refresh button in the default order,
+  matching pre-Jigsaw behavior.
+- **Mode/Feel polish**: the MODE button's activity label is now uppercase
+  when selected (was mixed-case, e.g. "MODE · Deep Work" → "MODE · DEEP
+  WORK"), matching MODE itself. Feel's mood bubbles now use the same
+  "5 primaries + More" layout Mode already had — Down/Tense/Drained moved
+  behind the More reveal, column-aligned under Calm/Mellow/where More sat.
