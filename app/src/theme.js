@@ -27,7 +27,7 @@ export const THEMES = {
   cyan:      { id: "cyan",      name: "Cyan",         bg: "#0E2422", surface: "#1B3330", border: "#2A4A46", accent: "#E0966F", accent2: "#5FADA4" },
   purple:    { id: "purple",    name: "Purple",       bg: "#1E1729", surface: "#2C2238", border: "#3D3050", accent: "#C7A855", accent2: "#9C87BF" },
   candy:     { id: "candy",     name: "Candy",         bg: "#341424", surface: "#461B30", border: "#562E42", accent: "#70C299", accent2: "#E689B8" },
-  spiderMan: { id: "spiderMan", name: "Spider Man",    bg: "#2B0F12", surface: "#3D1418", border: "#552024", accent: "#4C7FC4", accent2: "#C4453F" },
+  spiderMan: { id: "spiderMan", name: "Spider Man",    bg: "#391613", surface: "#4B1F1A", border: "#60332E", accent: "#4C7FC4", accent2: "#C4453F" },
 };
 
 const THEME_KEY = "cadence:theme";
