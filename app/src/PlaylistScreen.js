@@ -240,7 +240,7 @@ export default function PlaylistScreen({ traits }) {
   // recent batch) — otherwise refresh #2 could cycle back to tracks from
   // before refresh #1, since only the immediately-prior batch would be
   // excluded. Reset whenever a genuinely new activity/mode session starts
-  // (confirmMood/skipMood), not on every load() call.
+  // (a fresh Mode pick), not on every load() call.
   const MAX_REFRESHES = 10;
   const [refreshCount, setRefreshCount] = useState(0);
   const seenTrackIds = useRef(new Set());
@@ -255,11 +255,14 @@ export default function PlaylistScreen({ traits }) {
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
 
   const [mood, setMood] = useState(null);
-  const [moodPromptOpen, setMoodPromptOpen] = useState(false);
-  const [pendingActivity, setPendingActivity] = useState(null);
   const [selectedBubbles, setSelectedBubbles] = useState([]);
   const [extraFeeling, setExtraFeeling] = useState("");
-  const moodAskedThisSession = useRef(false);
+  // Mode/Feel are two independent lazy-loaded panels, not a chip row that's
+  // always on screen — each one's pills only mount once you open it. Feel
+  // is fully manual now (no more one-time auto-popup after picking a Mode);
+  // whatever's currently set there is just carried along on every build.
+  const [modeOpen, setModeOpen] = useState(false);
+  const [feelOpen, setFeelOpen] = useState(false);
 
   // Connecting Spotify EARLY (before the first recommend call) is what makes
   // getTopArtists() actually have something to blend in. Previously Spotify
@@ -306,44 +309,29 @@ export default function PlaylistScreen({ traits }) {
   // otherwise looks up the current activity's display label.
   const activityLabel = () => (activity === "road_trip" ? "Road Trip" : ACTIVITIES.find((a) => a.key === activity)?.label);
 
+  // Mode builds immediately, using whatever Feel is currently set (or none
+  // — empty labels/text are still a valid, common case).
   const onPickActivity = (key) => {
     trackEvent("activity_picked", { activity: key });
-    if (!moodAskedThisSession.current) {
-      setPendingActivity(key);
-      setSelectedBubbles([]);
-      setExtraFeeling("");
-      setMoodPromptOpen(true);
-    } else {
-      load(key);
-    }
+    setModeOpen(false);
+    load(key, { labels: selectedBubbles, text: extraFeeling });
   };
 
   const toggleBubble = (label) => {
     setSelectedBubbles((sel) => sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label]);
   };
 
-  // Road Trip has its own from/to form (on its own full-screen page) ahead
-  // of the shared mood prompt — pendingActivity === "road_trip" is what
-  // tells confirmMood/skipMood to call loadRoadTrip instead of load().
-  const confirmMood = () => {
-    trackEvent("mood_submitted", { activity: pendingActivity, bubble_count: selectedBubbles.length, has_text: !!extraFeeling.trim() });
-    moodAskedThisSession.current = true;
-    setMoodPromptOpen(false);
-    if (pendingActivity === "road_trip") {
+  // Closes the Feel panel and, if a Mode is already active, rebuilds with
+  // the newly-set mood. If no Mode is picked yet, the selection just sits
+  // in state and rides along on the next Mode tap — nothing to rebuild yet.
+  const applyFeel = () => {
+    trackEvent("mood_submitted", { activity, bubble_count: selectedBubbles.length, has_text: !!extraFeeling.trim() });
+    setFeelOpen(false);
+    if (!activity) return;
+    if (activity === "road_trip") {
       loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, { labels: selectedBubbles, text: extraFeeling });
     } else {
-      load(pendingActivity, { labels: selectedBubbles, text: extraFeeling });
-    }
-  };
-
-  const skipMood = () => {
-    trackEvent("mood_skipped", { activity: pendingActivity });
-    moodAskedThisSession.current = true;
-    setMoodPromptOpen(false);
-    if (pendingActivity === "road_trip") {
-      loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, { labels: [], text: "" });
-    } else {
-      load(pendingActivity, { labels: [], text: "" });
+      load(activity, { labels: selectedBubbles, text: extraFeeling });
     }
   };
 
@@ -355,7 +343,7 @@ export default function PlaylistScreen({ traits }) {
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [route, setRoute] = useState(null); // { from, to, distanceKm, durationMin, terrain }
-  const lastRoadTrip = useRef(null); // { from, to } — reused by confirmMood/skipMood/refresh
+  const lastRoadTrip = useRef(null); // { from, to } — reused by applyFeel/refresh
 
   const openRoadTripPage = () => {
     // If a different activity ran in between (tracks/target/route are all
@@ -365,6 +353,7 @@ export default function PlaylistScreen({ traits }) {
     // playlist. Reopening the SAME still-active trip (no other activity
     // picked in between) skips this and shows exactly where you left off.
     if (activity !== "road_trip") { setFromInput(""); setToInput(""); setRoute(null); }
+    setModeOpen(false);
     setRoadTripPageOpen(true);
   };
   const closeRoadTripPage = () => setRoadTripPageOpen(false);
@@ -374,14 +363,7 @@ export default function PlaylistScreen({ traits }) {
     if (!from || !to) return;
     trackEvent("activity_picked", { activity: "road_trip" });
     lastRoadTrip.current = { from, to };
-    if (!moodAskedThisSession.current) {
-      setPendingActivity("road_trip");
-      setSelectedBubbles([]);
-      setExtraFeeling("");
-      setMoodPromptOpen(true);
-    } else {
-      loadRoadTrip(from, to);
-    }
+    loadRoadTrip(from, to, { labels: selectedBubbles, text: extraFeeling });
   };
 
   const getLocation = async () => {
@@ -875,26 +857,78 @@ export default function PlaylistScreen({ traits }) {
           </Text>
         </Pressable>
       )}
-      {/* No "PICK A MODE" label here — CADENCE sits directly above this in
-          the app header, and stacking a second title-style line right below
-          it read as a redundant double-heading. The chips are activity
-          names (Deep Work, Workout, ...), self-explanatory without a label. */}
-      <View style={s.chipsFirst}>
-        {ACTIVITIES.map((a) => (
-          <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
-            <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
-          </Pressable>
-        ))}
+      {/* Mode and Feel are the only two things on screen by default — each
+          one's pills are lazy: the {modeOpen && ...} / {feelOpen && ...}
+          blocks below never mount until their button is opened at least
+          once, and unmount again on close instead of just hiding. Opening
+          one closes the other so only one panel is ever on screen. */}
+      <View style={s.modeFeelRow}>
+        <Pressable
+          style={[s.modeFeelBtn, modeOpen && s.modeFeelBtnActive]}
+          onPress={() => { setModeOpen((o) => !o); setFeelOpen(false); }}
+        >
+          <Text style={[s.modeFeelBtnText, modeOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
+            MODE{activity ? ` · ${activityLabel()}` : ""}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[s.modeFeelBtn, feelOpen && s.modeFeelBtnActive]}
+          onPress={() => { setFeelOpen((o) => !o); setModeOpen(false); }}
+        >
+          <Text style={[s.modeFeelBtnText, feelOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
+            FEEL{selectedBubbles.length ? ` · ${selectedBubbles.length}` : ""}
+          </Text>
+        </Pressable>
       </View>
 
-      {/* Deliberately a quiet text link, not a bordered button matching the
-          chips' visual weight — Cadence's core experience is context-aware
-          music (personality/activity/mood/weather), and Road Trip is one
-          specific, occasional use of that, not a second thing competing
-          for attention on every visit to this screen. */}
-      <Pressable style={s.roadTripLink} onPress={openRoadTripPage} hitSlop={8}>
-        <Text style={[s.roadTripLinkText, activity === "road_trip" && s.roadTripLinkTextActive]}>Plan a road trip →</Text>
-      </Pressable>
+      {modeOpen && (
+        <View style={s.togglePanel}>
+          <View style={s.chipsFirst}>
+            {ACTIVITIES.map((a) => (
+              <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
+                <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {/* Deliberately a quiet text link, not a chip matching the others'
+              visual weight — Cadence's core experience is context-aware
+              music (personality/activity/mood/weather), and Road Trip is one
+              specific, occasional use of that, not a second thing competing
+              for attention every time Mode opens. */}
+          <Pressable style={s.roadTripLink} onPress={openRoadTripPage} hitSlop={8}>
+            <Text style={[s.roadTripLinkText, activity === "road_trip" && s.roadTripLinkTextActive]}>Plan a road trip →</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {feelOpen && (
+        <View style={s.togglePanel}>
+          <View style={s.bubbleWrap}>
+            {MOOD_BUBBLES.map((label) => {
+              const sel = selectedBubbles.indexOf(label) !== -1;
+              return (
+                <Pressable key={label} style={[s.bubble, sel && s.bubbleActive]} onPress={() => toggleBubble(label)}>
+                  <Text style={[s.bubbleText, sel && s.bubbleTextActive]}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            style={s.moodInput}
+            placeholder="add more, in your own words (optional)..."
+            placeholderTextColor="#5A5A5A"
+            value={extraFeeling}
+            onChangeText={setExtraFeeling}
+            multiline
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
+          />
+          <Pressable style={s.moodGo} onPress={applyFeel}>
+            <Text style={s.moodGoText}>{activity ? "UPDATE PLAYLIST" : "SAVE FEEL"}</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Road Trip's banner/target/tracks/save all live on its own
           full-screen page instead (see roadTripPageOpen below) — this main
@@ -1064,38 +1098,6 @@ export default function PlaylistScreen({ traits }) {
       </View>
     )}
 
-    {moodPromptOpen && (
-      <Pressable style={s.moodOverlay} onPress={Keyboard.dismiss}>
-        <View style={s.moodCard}>
-          <Text style={s.moodKicker}>ONE-TIME {'\u00b7'} THIS SESSION</Text>
-          <Text style={s.moodQ}>How are you feeling right now?</Text>
-          <Text style={s.moodSub}>Pick as many as fit. This won't be asked again until you reopen the app.</Text>
-          <View style={s.bubbleWrap}>
-            {MOOD_BUBBLES.map((label) => {
-              const sel = selectedBubbles.indexOf(label) !== -1;
-              return (
-                <Pressable key={label} style={[s.bubble, sel && s.bubbleActive]} onPress={() => toggleBubble(label)}>
-                  <Text style={[s.bubbleText, sel && s.bubbleTextActive]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <TextInput
-            style={s.moodInput}
-            placeholder="add more, in your own words (optional)..."
-            placeholderTextColor="#5A5A5A"
-            value={extraFeeling}
-            onChangeText={setExtraFeeling}
-            multiline
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={Keyboard.dismiss}
-          />
-          <Pressable style={s.moodGo} onPress={confirmMood}><Text style={s.moodGoText}>BUILD MY PLAYLIST</Text></Pressable>
-          <Pressable onPress={skipMood} hitSlop={12}><Text style={s.moodSkip}>Skip {"\u2014"} Just Use Activity</Text></Pressable>
-        </View>
-      </Pressable>
-    )}
 
     {roadTripPageOpen && (
       <View style={s.roadTripPage}>
@@ -1230,13 +1232,23 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
-  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 18, marginTop: 10 },
+  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 4 },
   chip: { borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
 
-  roadTripLink: { alignSelf: "flex-start", marginBottom: 18, paddingVertical: 2 },
+  // Mode/Feel: the only two things visible on screen by default. Each opens
+  // a lazily-mounted card (togglePanel) below it — same rounded-card
+  // language as the rest of the app, not a chip row sitting bare on the bg.
+  modeFeelRow: { flexDirection: "row", gap: 10, marginTop: 10, marginBottom: 4 },
+  modeFeelBtn: { flex: 1, borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 14, alignItems: "center", backgroundColor: SURFACE },
+  modeFeelBtnActive: { backgroundColor: VOLT, borderColor: VOLT },
+  modeFeelBtnText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
+  modeFeelBtnTextActive: { color: "#000" },
+  togglePanel: { backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 18, marginTop: 4, marginBottom: 18 },
+
+  roadTripLink: { alignSelf: "flex-start", marginTop: 4, paddingVertical: 2 },
   roadTripLinkText: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
   roadTripLinkTextActive: { color: VOLT },
 
@@ -1322,9 +1334,6 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   qTitle: { color: "#EDEDED", fontSize: 13, fontWeight: "700" },
   qArtist: { color: "#7A7A7A", fontSize: 11, marginTop: 1 },
 
-  moodOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#000000E6", justifyContent: "center", paddingHorizontal: 24, zIndex: 20 },
-  moodCard: { backgroundColor: SURFACE, borderRadius: 22, borderWidth: 1, borderColor: BORDER, padding: 22 },
-  moodKicker: { color: VOLT, fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 10 },
   moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 6 },
   moodSub: { color: "#8A8A8A", fontSize: 12, lineHeight: 17, marginBottom: 16 },
   bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
@@ -1335,6 +1344,5 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   moodInput: { backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: BORDER, color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginBottom: 16 },
   moodGo: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
   moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
-  moodSkip: { color: "#7A7A7A", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
 });
 
