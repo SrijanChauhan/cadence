@@ -1280,7 +1280,11 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
-  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9, justifyContent: "center" },
+  // flex-start, not center — every row shares the same fixed-width (30%)
+  // columns, so left-aligning is what keeps a shorter row's bubbles (e.g.
+  // the two revealed by More) stacked directly under the bubbles in the
+  // row above rather than centered as a floating pair off-column.
+  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9 },
   // Percentage-of-container width (not content-hugging padding, and not
   // flex:1 — flex would size each chip relative to its OWN row's sibling
   // count, so the 2-wide third row would end up wider than rows of 3) so
@@ -1385,7 +1389,9 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
 
   moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 6 },
   moodSub: { color: "#8A8A8A", fontSize: 12, lineHeight: 17, marginBottom: 16 },
-  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14, justifyContent: "center" },
+  // Same reasoning as chipsFirst — flex-start keeps the last (shorter) row
+  // column-aligned under the rows above it, instead of centered off-column.
+  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
   // Same treatment as Mode's chip: percentage-of-container width instead of
   // content-hugging padding, so every mood bubble is the same length — and
   // at 30% width, three fit per row (flexWrap naturally wraps into rows of
