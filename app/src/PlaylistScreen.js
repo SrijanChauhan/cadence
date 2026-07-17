@@ -883,21 +883,28 @@ export default function PlaylistScreen({ traits }) {
 
       {modeOpen && (
         <View style={s.togglePanel}>
+          {/* Two explicit rows (4 + 3), not one flexWrap-everything row —
+              Road Trip is now a real chip alongside the six activities, and
+              chunking it this way keeps the panel a predictable two lines
+              regardless of how each label happens to wrap on a given
+              screen width. */}
           <View style={s.chipsFirst}>
-            {ACTIVITIES.map((a) => (
+            {ACTIVITIES.slice(0, 4).map((a) => (
               <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
                 <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
               </Pressable>
             ))}
           </View>
-          {/* Deliberately a quiet text link, not a chip matching the others'
-              visual weight — Cadence's core experience is context-aware
-              music (personality/activity/mood/weather), and Road Trip is one
-              specific, occasional use of that, not a second thing competing
-              for attention every time Mode opens. */}
-          <Pressable style={s.roadTripLink} onPress={openRoadTripPage} hitSlop={8}>
-            <Text style={[s.roadTripLinkText, activity === "road_trip" && s.roadTripLinkTextActive]}>Plan a road trip →</Text>
-          </Pressable>
+          <View style={[s.chipsFirst, { marginBottom: 0 }]}>
+            {ACTIVITIES.slice(4).map((a) => (
+              <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
+                <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
+              </Pressable>
+            ))}
+            <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripPage}>
+              <Text style={[s.chipText, activity === "road_trip" && s.chipTextActive]}>Road Trip</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
@@ -1232,10 +1239,10 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
-  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 4 },
-  chip: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
+  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9 },
+  chip: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, paddingHorizontal: 13, backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
-  chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
+  chipText: { color: "#DADADA", fontSize: 12.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
 
   // Mode/Feel: the only two things visible on screen by default. Each opens
@@ -1247,10 +1254,6 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   modeFeelBtnText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
   modeFeelBtnTextActive: { color: "#000" },
   togglePanel: { backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 18, marginTop: 4, marginBottom: 18 },
-
-  roadTripLink: { alignSelf: "flex-start", marginTop: 4, paddingVertical: 2 },
-  roadTripLinkText: { color: "#6E6E6E", fontSize: 12.5, fontWeight: "700" },
-  roadTripLinkTextActive: { color: VOLT },
 
   targetRow: { flexDirection: "row", gap: 14, alignItems: "flex-start", marginBottom: 14 },
   targetBig: { color: "#FFF", fontSize: 44, fontWeight: "900", letterSpacing: -2, lineHeight: 48 },
