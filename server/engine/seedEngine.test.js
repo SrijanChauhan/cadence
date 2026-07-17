@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { seedTarget, roadTripSeedTarget, ACTIVITIES } from "./seedEngine.js";
+import { seedTarget, roadTripSeedTarget, discoverSeedTarget, ACTIVITIES } from "./seedEngine.js";
 
 const NEUTRAL = { O: 0.5, C: 0.5, E: 0.5, A: 0.5, N: 0.5 };
 
@@ -88,4 +88,18 @@ test("roadTripSeedTarget applies a combined mood+weather+terrain shift the same 
   const base = roadTripSeedTarget(NEUTRAL, 0);
   const shifted = roadTripSeedTarget(NEUTRAL, 9); // e.g. mountainous terrain's shift
   assert.equal(shifted.bpmMin, base.bpmMin + 9);
+});
+
+test("discoverSeedTarget returns a valid band with a wide, deduped cross-activity seed pool", () => {
+  const t = discoverSeedTarget({ ...NEUTRAL, O: 0.9 });
+  assert.ok(t.bpmMin < t.bpmMax);
+  assert.ok(t.bpmMin >= 40 && t.bpmMax <= 200);
+  assert.ok(t.seedPool.length > 4, "should span more genres than any single activity's own pool");
+  assert.equal(new Set(t.seedPool).size, t.seedPool.length, "seed pool should have no duplicate genres");
+});
+
+test("discoverSeedTarget is unaffected by the stress-adjacent Neuroticism cap", () => {
+  const calm = discoverSeedTarget({ ...NEUTRAL, N: 0.9 });
+  const base = discoverSeedTarget(NEUTRAL);
+  assert.equal(calm.bpmMax, base.bpmMax, "discover isn't a stress-adjacent activity, N alone shouldn't cap it");
 });

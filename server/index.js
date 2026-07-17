@@ -20,9 +20,11 @@
  */
 import express from "express";
 import cors from "cors";
-import { seedTarget, roadTripSeedTarget, ACTIVITIES } from "./engine/seedEngine.js";
+import { seedTarget, roadTripSeedTarget, discoverSeedTarget, ACTIVITIES } from "./engine/seedEngine.js";
 import { analyzeCombined } from "./engine/moodEngine.js";
-import { searchAcrossGenres } from "./engine/musicProvider.js";
+import { searchAcrossGenres, pickTopArtists } from "./engine/musicProvider.js";
+import { itunesSearchTracks } from "./engine/itunes.js";
+import { filterToAppleMusicAvailable } from "./engine/appleMusicResolve.js";
 import { fetchWeather, weatherToBpmShift, fetchPlaceName } from "./engine/weather.js";
 import { getSimilarArtists } from "./engine/lastfm.js";
 import { geocodePlace, getRoute, classifyTerrain, TERRAIN_BPM_SHIFT } from "./engine/routing.js";
@@ -236,6 +238,83 @@ app.post("/roadtrip", async (req, res) => {
   } catch (e) {
     diag.push(`fatal: ${e.message}`);
     res.status(500).json({ error: e.message, diag });
+  }
+});
+
+/**
+ * POST /discover
+ * body: { traits, spotifyArtists?: string[] }
+ * returns: { target, tracks, artists, diag }
+ *
+ * Profile's "Recommendations for You" / "Top Artists for You" — trait-only,
+ * no activity/mood/weather/session context at all (Profile isn't "in" a
+ * session the way the main screen is). tracks is 5 personality-driven
+ * picks via the same cross-genre discovery /recommend uses; artists is 5
+ * names, real Spotify/Last.fm artists first, personality/genre-driven
+ * picks filling any remaining slots (see pickTopArtists).
+ */
+app.post("/discover", async (req, res) => {
+  const diag = [];
+  try {
+    const { traits, spotifyArtists = [] } = req.body;
+    if (!traits) return res.status(400).json({ error: "traits is required" });
+
+    const target = discoverSeedTarget(traits);
+
+    const topArtists = spotifyArtists.slice(0, 3);
+    const similarLists = await Promise.all(topArtists.map((a) => getSimilarArtists(a, 2)));
+    const similarArtists = [...new Set(similarLists.flat())].slice(0, 3);
+    const realArtists = [...new Set([...topArtists, ...similarArtists])];
+    if (realArtists.length) diag.push(`blended in ${realArtists.length} real artists (Spotify + Last.fm)`);
+
+    const pool = await searchAcrossGenres({
+      seedPool: [...target.seedPool, ...realArtists],
+      bpmMin: target.bpmMin,
+      bpmMax: target.bpmMax,
+      limit: 5 + 8,
+      onDiag: (m) => diag.push(m),
+    });
+    const tracks = pool.slice(0, 5);
+
+    const artists = await pickTopArtists({
+      seedPool: target.seedPool,
+      realArtists,
+      limit: 5,
+      onDiag: (m) => diag.push(m),
+    });
+
+    res.json({ target, tracks, artists, diag });
+  } catch (e) {
+    diag.push(`fatal: ${e.message}`);
+    res.status(500).json({ error: e.message, diag });
+  }
+});
+
+/**
+ * GET /artist-tracks?name=<artist name>
+ * returns: { tracks }
+ *
+ * "Top 10 songs" for one artist, tapped from Profile's Top Artists list.
+ * iTunes has no real popularity-ranked "top tracks by artist" endpoint —
+ * this searches by artist name and keeps only results whose artist field
+ * actually matches (iTunes's search is fuzzy and returns loosely-related
+ * results otherwise), falling back to the raw top results if the exact
+ * match filter comes up empty (e.g. a stylized/alternate artist-name spelling).
+ */
+app.get("/artist-tracks", async (req, res) => {
+  try {
+    const { name } = req.query;
+    if (!name) return res.status(400).json({ error: "name is required" });
+
+    const results = await itunesSearchTracks({ seedTerms: name, limit: 50 });
+    const nameKey = String(name).trim().toLowerCase();
+    const matched = results.filter((t) => (t.artist || "").trim().toLowerCase() === nameKey);
+    const candidates = matched.length ? matched : results;
+
+    const verified = await filterToAppleMusicAvailable(candidates, "IN");
+    res.json({ tracks: verified.slice(0, 10) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

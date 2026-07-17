@@ -1,30 +1,66 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking, Modal } from "react-native";
-import { Audio } from "expo-av";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
 import TraitGraph from "./TraitGraph";
 import { Equalizer } from "./PlaylistScreen";
 import { THEMES, useTheme } from "./theme";
+import { useMyPicks } from "./MyPicksContext";
+import { usePreviewPlayer } from "./usePreviewPlayer";
+import { getTopArtists } from "./engine/spotify";
+import { BACKEND_URL } from "./config";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
   const { theme, themeId, setTheme } = useTheme();
+  const { isMyPick, toggleLike } = useMyPicks();
+  const player = usePreviewPlayer();
   const [history, setHistory] = useState(null); // null = loading
   const [selected, setSelected] = useState(null); // a history record, or null for list view
   const [personalityOpen, setPersonalityOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [discover, setDiscover] = useState(null); // null = loading, else { tracks, artists }
+  const [artistOpen, setArtistOpen] = useState(null); // artist name, or null
+  const [failedCovers, setFailedCovers] = useState(() => new Set());
+  const markCoverFailed = (url) => setFailedCovers((f) => new Set(f).add(url));
 
   useEffect(() => {
     if (!visible) return;
     setSelected(null);
     setPersonalityOpen(false);
+    setArtistOpen(null);
     getPlaylistHistory().then(setHistory);
+    // Recommendations for You / Top Artists for You — trait-only, no
+    // activity/mood/session context (Profile isn't "in" a session the way
+    // the main screen is). Real Spotify top artists (if connected) blend in
+    // server-side alongside the personality-driven picks — see POST /discover.
+    (async () => {
+      setDiscover(null);
+      try {
+        const { names: spotifyArtists } = await getTopArtists();
+        const res = await fetch(`${BACKEND_URL}/discover`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ traits, spotifyArtists }),
+        });
+        const json = await res.json();
+        setDiscover(res.ok ? json : { tracks: [], artists: [] });
+      } catch {
+        setDiscover({ tracks: [], artists: [] });
+      }
+    })();
   }, [visible]);
+
+  // Profile's own player instance isn't unmounted when the overlay just
+  // hides (visible: false) — App.js keeps ProfileScreen mounted throughout,
+  // rendering null — so without this, closing Profile mid-preview would
+  // leave audio playing silently in the background.
+  useEffect(() => { if (!visible) player.stop(); }, [visible]);
 
   if (!visible) return null;
 
   const goBack = () => {
     if (selected) setSelected(null);
+    else if (artistOpen) setArtistOpen(null);
     else if (personalityOpen) setPersonalityOpen(false);
     else onClose();
   };
@@ -33,7 +69,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     <View style={[s.overlay, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
         <Pressable onPress={goBack} hitSlop={12} style={s.headerBackBtn}>
-          <Text style={s.headerBack}>{selected || personalityOpen ? "← Back" : "Close"}</Text>
+          <Text style={s.headerBack}>{selected || artistOpen || personalityOpen ? "← Back" : "Close"}</Text>
         </Pressable>
         {/* Absolutely positioned + centered on the FULL header width, not
             balanced via a fixed-width spacer against a variable-width back
@@ -41,12 +77,32 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             right elements happen to be the same width, which "Close" vs
             "← Back" never are, hence the title reading as off-center. */}
         <View style={s.headerTitleWrap} pointerEvents="none">
-          <Text style={s.headerTitle}>{selected ? "PLAYLIST" : personalityOpen ? "PERSONALITY" : "PROFILE"}</Text>
+          <Text style={s.headerTitle} numberOfLines={1}>
+            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : "PROFILE"}
+          </Text>
         </View>
       </View>
 
       {selected ? (
-        <PlaylistDetail record={selected} />
+        <PlaylistDetail
+          record={selected}
+          theme={theme}
+          player={player}
+          isMyPick={isMyPick}
+          onToggleLike={toggleLike}
+          failedCovers={failedCovers}
+          onCoverFail={markCoverFailed}
+        />
+      ) : artistOpen ? (
+        <ArtistDetail
+          name={artistOpen}
+          theme={theme}
+          player={player}
+          isMyPick={isMyPick}
+          onToggleLike={toggleLike}
+          failedCovers={failedCovers}
+          onCoverFail={markCoverFailed}
+        />
       ) : personalityOpen ? (
         <PersonalityDetail
           traits={traits}
@@ -55,7 +111,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           onGoPlaylist={onClose}
         />
       ) : (
-        <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
           <Pressable onPress={() => setPersonalityOpen(true)}>
             <PersonalityPlacard traits={traits} />
           </Pressable>
@@ -67,6 +123,17 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
               <Text style={s.recalBtnText}>Theme</Text>
             </Pressable>
           </View>
+
+          <DiscoverSection
+            discover={discover}
+            theme={theme}
+            player={player}
+            isMyPick={isMyPick}
+            onToggleLike={toggleLike}
+            onOpenArtist={setArtistOpen}
+            failedCovers={failedCovers}
+            onCoverFail={markCoverFailed}
+          />
 
           <Text style={[s.kicker, { marginTop: 32 }]}>YOUR PLAYLISTS</Text>
           {history === null ? (
@@ -89,6 +156,33 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             ))
           )}
         </ScrollView>
+      )}
+
+      {/* One docked now-playing bar for the whole screen — Recommendations,
+          a saved playlist, and an artist's top-10 all share the same player
+          instance, so whichever one started playback, this is where it shows. */}
+      {player.nowPlaying && (
+        <View style={[s.nowBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {player.nowPlaying.cover && !failedCovers.has(player.nowPlaying.cover) ? (
+            <Image source={{ uri: player.nowPlaying.cover }} style={s.nowCover} onError={() => markCoverFailed(player.nowPlaying.cover)} />
+          ) : (
+            <View style={[s.nowCover, s.trackCoverEmpty]} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={s.nowTitle} numberOfLines={1}>{player.nowPlaying.title}</Text>
+            <Text style={s.nowArtist} numberOfLines={1}>
+              {player.upNext ? "Up Next · " + player.upNext.title : player.nowPlaying.artist + " · Preview"}
+            </Text>
+          </View>
+          <Pressable style={s.trackPlayBtn} onPress={() => player.play(player.nowPlaying)} hitSlop={8}>
+            <Text style={[s.trackPlayIcon, { color: theme.accent, fontSize: 18 }]}>{"❚❚"}</Text>
+          </Pressable>
+          {player.upNext && (
+            <Pressable style={s.trackPlayBtn} onPress={() => player.play(player.upNext)} hitSlop={8}>
+              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"⏭"}</Text>
+            </Pressable>
+          )}
+        </View>
       )}
 
       <Modal transparent visible={themePickerOpen} animationType="fade" onRequestClose={() => setThemePickerOpen(false)}>
@@ -134,115 +228,153 @@ function PersonalityDetail({ traits, theme, onGoProfile, onGoPlaylist }) {
   );
 }
 
-function PlaylistDetail({ record }) {
-  const { theme } = useTheme();
-  const [playingId, setPlayingId] = useState(null);
-  const [playError, setPlayError] = useState(null);
-  const [failedCovers, setFailedCovers] = useState(() => new Set());
-  const sound = useRef(null);
-  const tracks = record.tracks || [];
+/** Shared by the saved-playlist detail, Recommendations, and an artist's
+ * top-10 — same cover+equalizer-overlay, play, and heart-to-My-Picks
+ * treatment everywhere a track shows up in Profile. */
+function TrackListItem({ t, theme, playing, isPicked, onPlay, onToggleLike, failedCovers, onCoverFail }) {
+  return (
+    <View style={s.trackRow}>
+      <View>
+        {t.cover && !failedCovers.has(t.cover) ? (
+          <Image source={{ uri: t.cover }} style={s.trackCover} onError={() => onCoverFail(t.cover)} />
+        ) : (
+          <View style={[s.trackCover, s.trackCoverEmpty]} />
+        )}
+        {playing && (
+          <View style={s.trackCoverEqOverlay} pointerEvents="none">
+            <Equalizer bpm={t.bpm} />
+          </View>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[s.trackTitle, playing && { color: theme.accent }]} numberOfLines={1}>{t.title}</Text>
+        <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
+      </View>
+      <Pressable style={s.trackPlayBtn} onPress={onPlay} hitSlop={8}>
+        <Text style={[s.trackPlayIcon, playing && { color: theme.accent }]}>{playing ? "❚❚" : "▶"}</Text>
+      </Pressable>
+      <Pressable style={s.trackPlayBtn} onPress={onToggleLike} hitSlop={8}>
+        <Text style={[s.trackPlayIcon, isPicked && { color: theme.accent }]}>{"♥"}</Text>
+      </Pressable>
+    </View>
+  );
+}
 
-  // stop playback if the user navigates back out of this detail view
-  useEffect(() => () => { sound.current?.unloadAsync(); }, []);
+/** "Recommendations for You" (5 personality-driven tracks) and "Top Artists
+ * for You" (5 names, real Spotify/Last.fm artists blended with genre-driven
+ * picks server-side — see pickTopArtists) — both live inline on the main
+ * Profile view, not a separate page, since they're meant to be glanceable
+ * right below the personality placard, not another destination to visit. */
+function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOpenArtist, failedCovers, onCoverFail }) {
+  return (
+    <>
+      <Text style={[s.kicker, { marginTop: 32 }]}>RECOMMENDATIONS FOR YOU</Text>
+      {discover === null ? (
+        <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
+      ) : discover.tracks.length === 0 ? (
+        <Text style={s.empty}>Nothing to show yet — connect Spotify or take the quiz for better picks.</Text>
+      ) : (
+        discover.tracks.map((t) => (
+          <TrackListItem
+            key={t.id}
+            t={t}
+            theme={theme}
+            playing={player.playingId === t.id}
+            isPicked={isMyPick(t.id)}
+            onPlay={() => player.play(t, discover.tracks)}
+            onToggleLike={() => onToggleLike(t)}
+            failedCovers={failedCovers}
+            onCoverFail={onCoverFail}
+          />
+        ))
+      )}
 
-  const play = async (track) => {
-    setPlayError(null);
-    try {
-      if (sound.current) { await sound.current.unloadAsync(); sound.current = null; }
-      if (playingId === track.id) { setPlayingId(null); return; }
-      if (!track.preview) { setPlayError("This track has no preview clip."); return; }
-      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
-      const { sound: sd } = await Audio.Sound.createAsync({ uri: track.preview }, { shouldPlay: true });
-      sound.current = sd;
-      setPlayingId(track.id);
-      // A saved playlist is meant to be played straight through — advance to
-      // the next track automatically instead of just stopping, same as the
-      // main playlist screen's queue does.
-      sd.setOnPlaybackStatusUpdate((st) => {
-        if (!st.didJustFinish) return;
-        const pos = tracks.findIndex((t) => t.id === track.id);
-        const next = pos >= 0 ? tracks[pos + 1] : null;
-        if (next) play(next); else setPlayingId(null);
-      });
-    } catch {
-      // saved playlists can be old — iTunes preview links are far more
-      // stable than Deezer's ever were, but not guaranteed to never expire
-      setPlayError("Preview playback failed — this link may have expired since it was saved.");
-    }
-  };
+      <Text style={[s.kicker, { marginTop: 28 }]}>TOP ARTISTS FOR YOU</Text>
+      {discover === null ? (
+        <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
+      ) : discover.artists.length === 0 ? (
+        <Text style={s.empty}>Nothing to show yet.</Text>
+      ) : (
+        discover.artists.map((name) => (
+          <Pressable key={name} style={s.row} onPress={() => onOpenArtist(name)}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.rowName} numberOfLines={1}>{name}</Text>
+            </View>
+            <Text style={s.rowChevron}>›</Text>
+          </Pressable>
+        ))
+      )}
+    </>
+  );
+}
 
-  const nowPlaying = tracks.find((t) => t.id === playingId);
-  const upNext = (() => {
-    if (!nowPlaying) return null;
-    const pos = tracks.findIndex((t) => t.id === playingId);
-    return pos >= 0 ? tracks[pos + 1] : null;
-  })();
+function ArtistDetail({ name, theme, player, isMyPick, onToggleLike, failedCovers, onCoverFail }) {
+  const [tracks, setTracks] = useState(null); // null = loading
+
+  useEffect(() => {
+    setTracks(null);
+    fetch(`${BACKEND_URL}/artist-tracks?name=${encodeURIComponent(name)}`)
+      .then((res) => res.json())
+      .then((json) => setTracks(json.tracks || []))
+      .catch(() => setTracks([]));
+  }, [name]);
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={[s.body, { paddingBottom: nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
-        <Text style={s.detailName}>{record.name}</Text>
-        <Text style={s.detailStory}>{record.story}</Text>
-        {record.spotifyUrl && (
-          <Pressable onPress={() => Linking.openURL(record.spotifyUrl)}>
-            <Text style={[s.detailLink, { color: theme.accent }]}>Open in Spotify →</Text>
-          </Pressable>
-        )}
-
-        <Text style={[s.kicker, { marginTop: 24 }]}>TRACKS · {tracks.length}</Text>
-        {playError && <Text style={s.playError}>{playError}</Text>}
-        {tracks.map((t) => {
-          const playing = playingId === t.id;
-          return (
-            <View key={t.id} style={s.trackRow}>
-              <View>
-                {t.cover && !failedCovers.has(t.cover) ? (
-                  <Image source={{ uri: t.cover }} style={s.trackCover} onError={() => setFailedCovers((f) => new Set(f).add(t.cover))} />
-                ) : (
-                  <View style={[s.trackCover, s.trackCoverEmpty]} />
-                )}
-                {playing && (
-                  <View style={s.trackCoverEqOverlay} pointerEvents="none">
-                    <Equalizer bpm={t.bpm} />
-                  </View>
-                )}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.trackTitle, playing && { color: theme.accent }]} numberOfLines={1}>{t.title}</Text>
-                <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
-              </View>
-              <Pressable style={s.trackPlayBtn} onPress={() => play(t)} hitSlop={8}>
-                <Text style={[s.trackPlayIcon, playing && { color: theme.accent }]}>
-                  {playing ? "❚❚" : "▶"}
-                </Text>
-              </Pressable>
-            </View>
-          );
-        })}
-      </ScrollView>
-
-      {nowPlaying && (
-        <View style={[s.nowBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {nowPlaying.cover && !failedCovers.has(nowPlaying.cover) ? (
-            <Image source={{ uri: nowPlaying.cover }} style={s.nowCover} onError={() => setFailedCovers((f) => new Set(f).add(nowPlaying.cover))} />
-          ) : (
-            <View style={[s.nowCover, s.trackCoverEmpty]} />
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={s.nowTitle} numberOfLines={1}>{nowPlaying.title}</Text>
-            <Text style={s.nowArtist} numberOfLines={1}>{upNext ? "Up Next · " + upNext.title : nowPlaying.artist + " · Preview"}</Text>
-          </View>
-          <Pressable style={s.trackPlayBtn} onPress={() => play(nowPlaying)} hitSlop={8}>
-            <Text style={[s.trackPlayIcon, { color: theme.accent, fontSize: 18 }]}>{"❚❚"}</Text>
-          </Pressable>
-          {upNext && (
-            <Pressable style={s.trackPlayBtn} onPress={() => play(upNext)} hitSlop={8}>
-              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"⏭"}</Text>
-            </Pressable>
-          )}
-        </View>
+    <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
+      <Text style={s.detailName}>{name}</Text>
+      <Text style={[s.kicker, { marginTop: 16 }]}>TOP {tracks?.length || 10}</Text>
+      {tracks === null ? (
+        <ActivityIndicator color={theme.accent} style={{ marginTop: 16 }} />
+      ) : tracks.length === 0 ? (
+        <Text style={s.empty}>Couldn't find tracks for this artist right now.</Text>
+      ) : (
+        tracks.map((t) => (
+          <TrackListItem
+            key={t.id}
+            t={t}
+            theme={theme}
+            playing={player.playingId === t.id}
+            isPicked={isMyPick(t.id)}
+            onPlay={() => player.play(t, tracks)}
+            onToggleLike={() => onToggleLike(t)}
+            failedCovers={failedCovers}
+            onCoverFail={onCoverFail}
+          />
+        ))
       )}
-    </View>
+    </ScrollView>
+  );
+}
+
+function PlaylistDetail({ record, theme, player, isMyPick, onToggleLike, failedCovers, onCoverFail }) {
+  const tracks = record.tracks || [];
+
+  return (
+    <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
+      <Text style={s.detailName}>{record.name}</Text>
+      <Text style={s.detailStory}>{record.story}</Text>
+      {record.spotifyUrl && (
+        <Pressable onPress={() => Linking.openURL(record.spotifyUrl)}>
+          <Text style={[s.detailLink, { color: theme.accent }]}>Open in Spotify →</Text>
+        </Pressable>
+      )}
+
+      <Text style={[s.kicker, { marginTop: 24 }]}>TRACKS · {tracks.length}</Text>
+      {player.playError && <Text style={s.playError}>{player.playError}</Text>}
+      {tracks.map((t) => (
+        <TrackListItem
+          key={t.id}
+          t={t}
+          theme={theme}
+          playing={player.playingId === t.id}
+          isPicked={isMyPick(t.id)}
+          onPlay={() => player.play(t, tracks)}
+          onToggleLike={() => onToggleLike(t)}
+          failedCovers={failedCovers}
+          onCoverFail={onCoverFail}
+        />
+      ))}
+    </ScrollView>
   );
 }
 

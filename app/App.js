@@ -8,6 +8,7 @@ import OnboardingScreen from "./src/OnboardingScreen";
 import PlaylistScreen from "./src/PlaylistScreen";
 import ProfileScreen from "./src/ProfileScreen";
 import { ThemeProvider, useTheme } from "./src/theme";
+import { MyPicksProvider } from "./src/MyPicksContext";
 import { track } from "./src/analytics";
 
 const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
@@ -15,10 +16,14 @@ const FRONT_PAGE_MIN_MS = 1800; // brand moment on every launch, not just first 
 
 export default function App() {
   // ThemeProvider has to be above the component that calls useTheme() —
-  // AppInner is that component, App itself stays theme-agnostic.
+  // AppInner is that component, App itself stays theme-agnostic. MyPicks
+  // needs to sit above both PlaylistScreen and ProfileScreen so hearting a
+  // track in either one updates the exact same shared state.
   return (
     <ThemeProvider>
-      <AppInner />
+      <MyPicksProvider>
+        <AppInner />
+      </MyPicksProvider>
     </ThemeProvider>
   );
 }

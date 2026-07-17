@@ -138,3 +138,21 @@ export function seedTarget(traits, activity, extraBpmShift = 0) {
 export function roadTripSeedTarget(traits, extraBpmShift = 0) {
   return computeTarget(ROAD_TRIP_BASE, traits, extraBpmShift, false);
 }
+
+// Profile's "Recommendations for You" / "Top Artists for You" aren't tied to
+// any activity, mood, or weather — just the trait vector on its own — so the
+// seed pool is the union of every activity's genres (deduped) rather than
+// one activity's narrow set, giving Openness real variety to widen/narrow
+// across. bpm is a neutral general-listening band, not tuned to any task.
+const DISCOVER_BASE = {
+  label: "Discover",
+  bpm: [90, 125],
+  seeds: [...new Set(Object.values(ACTIVITY_BASE).flatMap((a) => a.seeds))],
+  vocalPenalty: false,
+};
+
+/** Same shape as seedTarget/roadTripSeedTarget, trait-only (no activity, no
+ * mood/weather shift) — see POST /discover in index.js. */
+export function discoverSeedTarget(traits) {
+  return computeTarget(DISCOVER_BASE, traits, 0, false);
+}

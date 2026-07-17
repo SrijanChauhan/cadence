@@ -53,6 +53,13 @@ const GENERIC_TITLE_WORDS = new Set([
   "bootcamp", "boot", "camp", "walk", "walking", "jogging", "pump", "pumped",
   "intense", "energy", "trainer", "series", "squad", "crew", "prodigy", "for",
   "the", "and", "of", "a", "to",
+  // instrumental/ambient/focus library brands use a different vocabulary
+  // entirely from the workout-oriented words above ("Piano Ambient",
+  // "Focus Zone") — added once this list started also screening candidate
+  // ARTIST names for Top Artists, not just track titles (see pickTopArtists).
+  "ambient", "piano", "instrumental", "focus", "lounge", "zone", "study",
+  "concentration", "calm", "relax", "relaxing", "meditation", "spa", "acoustic",
+  "sounds", "sound",
 ]);
 
 function isGenericTitle(title) {
@@ -138,6 +145,58 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
   verified.sort((a, b) => distance(a) - distance(b));
 
   return verified.slice(0, limit);
+}
+
+/**
+ * Cadence — "Top Artists for You" (Profile's personality-driven artist
+ * list, see POST /discover in index.js). Real artists — your actual
+ * Spotify top artists plus their real Last.fm similar artists, passed in
+ * already deduped — fill slots first; whatever's left over is filled with
+ * one representative artist per genre seed, so the list stays genre-diverse
+ * and "consistent to behaviour and personality" (discoverSeedTarget's seed
+ * pool is already trait-filtered) even when Spotify isn't connected and
+ * there's no real listening data to draw on at all.
+ */
+export async function pickTopArtists({ seedPool, realArtists = [], limit = 5, onDiag = () => {} }) {
+  const seen = new Set();
+  const picks = [];
+  const realCount = Math.min(realArtists.length, limit);
+
+  for (const name of realArtists) {
+    const key = name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    picks.push(name.trim());
+    if (picks.length >= limit) break;
+  }
+
+  if (picks.length < limit && seedPool?.length) {
+    const shuffled = [...seedPool].sort(() => Math.random() - 0.5);
+    for (const term of shuffled) {
+      if (picks.length >= limit) break;
+      try {
+        const results = await itunesSearchTracks({ seedTerms: term, limit: 10 });
+        // isStockMusic only checks the TRACK title — a genre-driven artist
+        // pick also needs the ARTIST name itself screened, since library-
+        // music publishers use brand-like names ("Jazz Lounge Zone") that
+        // isGenericTitle's ">=2 generic words" heuristic catches just as
+        // well applied to a name as to a title.
+        const candidate = results.find((r) => {
+          const key = (r.artist || "").trim().toLowerCase();
+          return key && !seen.has(key) && !isStockMusic(r) && !isGenericTitle(r.artist);
+        });
+        if (candidate) {
+          seen.add(candidate.artist.trim().toLowerCase());
+          picks.push(candidate.artist.trim());
+        }
+      } catch (e) {
+        onDiag(`artist pick for "${term}" failed: ${e.message}`);
+      }
+    }
+  }
+
+  onDiag(`top artists: ${realCount} real, ${picks.length - realCount} genre-driven`);
+  return picks.slice(0, limit);
 }
 
 /**

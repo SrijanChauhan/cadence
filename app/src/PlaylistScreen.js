@@ -16,6 +16,7 @@ import { openInAppleMusic } from "./engine/appleMusic";
 import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotifySession, getTopArtists } from "./engine/spotify";
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
 import { useTheme } from "./theme";
+import { useMyPicks } from "./MyPicksContext";
 import { track as trackEvent } from "./analytics";
 
 /**
@@ -229,9 +230,10 @@ export default function PlaylistScreen({ traits }) {
   // and NOT derived from the current `tracks` list, since that resets on
   // every activity switch. Stores full track snapshots (not just ids) so a
   // pick still renders correctly even when it is not in the currently
-  // loaded activity's results.
-  const [myPicks, setMyPicks] = useState([]);
-  const myPicksLoaded = useRef(false);
+  // loaded activity's results. Lives in MyPicksContext now, not local state
+  // here — Profile's Recommendations section can heart a track too, and
+  // both need to share the exact same live list, not separate copies.
+  const { myPicks, addToMyPicks, removeFromMyPicks, isMyPick, toggleLike: toggleMyPick, reorderMyPicks } = useMyPicks();
 
   // Refresh Playlist: capped at 10 uses per activity session, and excludes
   // the FULL cumulative set of everything shown so far (not just the most
@@ -271,19 +273,8 @@ export default function PlaylistScreen({ traits }) {
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true, shouldDuckAndroid: true }).catch(() => {});
     restoreSpotifySession().then(() => setSpotifyConnected(hasSpotifyAuth())); // silently reconnect if we have a saved refresh token
-    AsyncStorage.getItem("cadence:myPicks")
-      .then((raw) => { if (raw) setMyPicks(JSON.parse(raw)); })
-      .catch(() => {})
-      .finally(() => { myPicksLoaded.current = true; });
     return () => { sound.current?.unloadAsync(); };
   }, []);
-
-  // persist on every change, but not before the initial load above has run —
-  // otherwise the empty initial state would overwrite a previously saved list
-  useEffect(() => {
-    if (!myPicksLoaded.current) return;
-    AsyncStorage.setItem("cadence:myPicks", JSON.stringify(myPicks)).catch(() => {});
-  }, [myPicks]);
 
   const connectSpotifyNow = async () => {
     setConnectingSpotify(true);
@@ -610,27 +601,16 @@ export default function PlaylistScreen({ traits }) {
     trackEvent(eventName, { activity, feedback_type: type });
   };
 
-  const addToMyPicks = (track) => {
-    setMyPicks((ps) => (ps.some((p) => p.id === track.id) ? ps : [...ps, track]));
-  };
-  const removeFromMyPicks = (id) => setMyPicks((ps) => ps.filter((p) => p.id !== id));
-  const isMyPick = (id) => myPicks.some((p) => p.id === id);
-  const reorderMyPicks = (fromIndex, toIndex) => {
-    setMyPicks((ps) => {
-      const next = [...ps];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
-
+  // addToMyPicks/removeFromMyPicks/isMyPick/reorderMyPicks now come from
+  // MyPicksContext (see the hook destructured near the top of this
+  // component) — this activity's own queue is what's left to manage here.
   const like = (track) => { giveFeedback(track, "like"); enqueue(track); addToMyPicks(track); };
 
   // heart is a toggle: tap again to un-favourite, which also drops it from
   // the auto-play queue it was added to (a track that is no longer "picked"
   // should not still be lined up to play next)
   const toggleLike = (track) => {
-    if (isMyPick(track.id)) { removeFromMyPicks(track.id); dequeue(track.id); }
+    if (isMyPick(track.id)) { toggleMyPick(track); dequeue(track.id); }
     else like(track);
   };
 
