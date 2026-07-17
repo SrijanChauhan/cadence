@@ -109,7 +109,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             "← Back" never are, hence the title reading as off-center. */}
         <View style={s.headerTitleWrap} pointerEvents="none">
           <Text style={s.headerTitle} numberOfLines={1}>
-            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : discoverOpen ? "RECOMMENDATIONS" : "PROFILE"}
+            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : discoverOpen ? "RECCOS" : "PROFILE"}
           </Text>
         </View>
       </View>
@@ -165,7 +165,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
               <Text style={s.recalBtnText}>Theme</Text>
             </Pressable>
             <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setDiscoverOpen(true)}>
-              <Text style={s.recalBtnText}>Recommendations</Text>
+              <Text style={s.recalBtnText}>Reccos</Text>
             </Pressable>
           </View>
 
