@@ -4,6 +4,7 @@ import { Audio } from "expo-av";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
 import TraitGraph from "./TraitGraph";
+import { Equalizer } from "./PlaylistScreen";
 import { THEMES, useTheme } from "./theme";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
@@ -137,7 +138,9 @@ function PlaylistDetail({ record }) {
   const { theme } = useTheme();
   const [playingId, setPlayingId] = useState(null);
   const [playError, setPlayError] = useState(null);
+  const [failedCovers, setFailedCovers] = useState(() => new Set());
   const sound = useRef(null);
+  const tracks = record.tracks || [];
 
   // stop playback if the user navigates back out of this detail view
   useEffect(() => () => { sound.current?.unloadAsync(); }, []);
@@ -152,7 +155,15 @@ function PlaylistDetail({ record }) {
       const { sound: sd } = await Audio.Sound.createAsync({ uri: track.preview }, { shouldPlay: true });
       sound.current = sd;
       setPlayingId(track.id);
-      sd.setOnPlaybackStatusUpdate((st) => { if (st.didJustFinish) setPlayingId(null); });
+      // A saved playlist is meant to be played straight through — advance to
+      // the next track automatically instead of just stopping, same as the
+      // main playlist screen's queue does.
+      sd.setOnPlaybackStatusUpdate((st) => {
+        if (!st.didJustFinish) return;
+        const pos = tracks.findIndex((t) => t.id === track.id);
+        const next = pos >= 0 ? tracks[pos + 1] : null;
+        if (next) play(next); else setPlayingId(null);
+      });
     } catch {
       // saved playlists can be old — iTunes preview links are far more
       // stable than Deezer's ever were, but not guaranteed to never expire
@@ -160,33 +171,78 @@ function PlaylistDetail({ record }) {
     }
   };
 
-  return (
-    <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
-      <Text style={s.detailName}>{record.name}</Text>
-      <Text style={s.detailStory}>{record.story}</Text>
-      {record.spotifyUrl && (
-        <Pressable onPress={() => Linking.openURL(record.spotifyUrl)}>
-          <Text style={[s.detailLink, { color: theme.accent }]}>Open in Spotify →</Text>
-        </Pressable>
-      )}
+  const nowPlaying = tracks.find((t) => t.id === playingId);
+  const upNext = (() => {
+    if (!nowPlaying) return null;
+    const pos = tracks.findIndex((t) => t.id === playingId);
+    return pos >= 0 ? tracks[pos + 1] : null;
+  })();
 
-      <Text style={[s.kicker, { marginTop: 24 }]}>TRACKS · {record.tracks?.length || 0}</Text>
-      {playError && <Text style={s.playError}>{playError}</Text>}
-      {(record.tracks || []).map((t) => (
-        <View key={t.id} style={s.trackRow}>
-          {t.cover ? <Image source={{ uri: t.cover }} style={s.trackCover} /> : <View style={[s.trackCover, s.trackCoverEmpty]} />}
-          <View style={{ flex: 1 }}>
-            <Text style={s.trackTitle} numberOfLines={1}>{t.title}</Text>
-            <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
-          </View>
-          <Pressable style={s.trackPlayBtn} onPress={() => play(t)} hitSlop={8}>
-            <Text style={[s.trackPlayIcon, playingId === t.id && { color: theme.accent }]}>
-              {playingId === t.id ? "❚❚" : "▶"}
-            </Text>
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={[s.body, { paddingBottom: nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
+        <Text style={s.detailName}>{record.name}</Text>
+        <Text style={s.detailStory}>{record.story}</Text>
+        {record.spotifyUrl && (
+          <Pressable onPress={() => Linking.openURL(record.spotifyUrl)}>
+            <Text style={[s.detailLink, { color: theme.accent }]}>Open in Spotify →</Text>
           </Pressable>
+        )}
+
+        <Text style={[s.kicker, { marginTop: 24 }]}>TRACKS · {tracks.length}</Text>
+        {playError && <Text style={s.playError}>{playError}</Text>}
+        {tracks.map((t) => {
+          const playing = playingId === t.id;
+          return (
+            <View key={t.id} style={s.trackRow}>
+              <View>
+                {t.cover && !failedCovers.has(t.cover) ? (
+                  <Image source={{ uri: t.cover }} style={s.trackCover} onError={() => setFailedCovers((f) => new Set(f).add(t.cover))} />
+                ) : (
+                  <View style={[s.trackCover, s.trackCoverEmpty]} />
+                )}
+                {playing && (
+                  <View style={s.trackCoverEqOverlay} pointerEvents="none">
+                    <Equalizer bpm={t.bpm} />
+                  </View>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.trackTitle, playing && { color: theme.accent }]} numberOfLines={1}>{t.title}</Text>
+                <Text style={s.trackArtist} numberOfLines={1}>{t.artist}</Text>
+              </View>
+              <Pressable style={s.trackPlayBtn} onPress={() => play(t)} hitSlop={8}>
+                <Text style={[s.trackPlayIcon, playing && { color: theme.accent }]}>
+                  {playing ? "❚❚" : "▶"}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {nowPlaying && (
+        <View style={[s.nowBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {nowPlaying.cover && !failedCovers.has(nowPlaying.cover) ? (
+            <Image source={{ uri: nowPlaying.cover }} style={s.nowCover} onError={() => setFailedCovers((f) => new Set(f).add(nowPlaying.cover))} />
+          ) : (
+            <View style={[s.nowCover, s.trackCoverEmpty]} />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={s.nowTitle} numberOfLines={1}>{nowPlaying.title}</Text>
+            <Text style={s.nowArtist} numberOfLines={1}>{upNext ? "Up Next · " + upNext.title : nowPlaying.artist + " · Preview"}</Text>
+          </View>
+          <Pressable style={s.trackPlayBtn} onPress={() => play(nowPlaying)} hitSlop={8}>
+            <Text style={[s.trackPlayIcon, { color: theme.accent, fontSize: 18 }]}>{"❚❚"}</Text>
+          </Pressable>
+          {upNext && (
+            <Pressable style={s.trackPlayBtn} onPress={() => play(upNext)} hitSlop={8}>
+              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"⏭"}</Text>
+            </Pressable>
+          )}
         </View>
-      ))}
-    </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -233,9 +289,15 @@ const s = StyleSheet.create({
   trackRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderColor: "#141414" },
   trackCover: { width: 42, height: 42, borderRadius: 10 },
   trackCoverEmpty: { backgroundColor: "#141414" },
+  trackCoverEqOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, borderRadius: 10, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center" },
   trackTitle: { color: "#EDEDED", fontSize: 13.5, fontWeight: "700" },
   trackArtist: { color: "#7A7A7A", fontSize: 11.5, marginTop: 1 },
   trackPlayBtn: { padding: 8 },
   trackPlayIcon: { color: "#7A7A7A", fontSize: 15, fontWeight: "800" },
   playError: { color: "#FF5A4E", fontSize: 12.5, fontWeight: "600", lineHeight: 18, marginBottom: 10 },
+
+  nowBar: { position: "absolute", left: 12, right: 12, bottom: 14, borderRadius: 20, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 10, padding: 10 },
+  nowCover: { width: 44, height: 44, borderRadius: 12 },
+  nowTitle: { color: "#FFF", fontSize: 13.5, fontWeight: "800" },
+  nowArtist: { color: "#7A7A7A", fontSize: 11, fontWeight: "600", marginTop: 1 },
 });

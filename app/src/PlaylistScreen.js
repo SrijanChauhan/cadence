@@ -66,7 +66,7 @@ const SWIPE_REMOVE_THRESHOLD = 90;
  * clearly over any album art regardless of which of the four themes is
  * active, and a theme-matched accent risked blending into art that
  * happened to share that hue. */
-function Equalizer({ bpm }) {
+export function Equalizer({ bpm }) {
   const bars = useRef([0, 1, 2].map(() => new Animated.Value(0.3))).current;
   const beatMs = bpm && bpm > 0 ? 60000 / bpm : 500;
   const colors = ["#B5B5B5", "#8A8A8A", "#B5B5B5"];
@@ -693,7 +693,7 @@ export default function PlaylistScreen({ traits }) {
     const moodWords = mood?.selected?.length
       ? mood.selected.join(", ").toLowerCase()
       : (mood?.words?.length ? mood.words.join(", ") : null);
-    if (moodWords) story += ` You were feeling ${moodWords}.`;
+    if (moodWords) story += ` I was feeling ${moodWords}.`;
     else if (mood?.label && mood.label !== "Neutral") story += ` Mood: ${mood.label.toLowerCase()}.`;
 
     if (target) story += ` Tuned for ${actLabel} at ${target.bpmMin}–${target.bpmMax} BPM.`;
@@ -788,7 +788,7 @@ export default function PlaylistScreen({ traits }) {
       const list = myPicks;
       const coverImageBase64 = await captureCoverArt();
       const name = "Cadence — My Picks";
-      const story = `Made by Cadence. Your favourited catalog across sessions — ${list.length} track${list.length === 1 ? "" : "s"}.`;
+      const story = `Made by Cadence. My favourited catalog across sessions — ${list.length} track${list.length === 1 ? "" : "s"}.`;
       const { matchedCount, totalCount, url, coverUploaded } = await createPlaylistFromTracks(list, {
         name, description: story, coverImageBase64,
       });
