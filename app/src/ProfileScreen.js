@@ -330,10 +330,15 @@ function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOp
       ) : discover.artists.length === 0 ? (
         <Text style={s.empty}>Nothing to show yet.</Text>
       ) : (
-        discover.artists.map((name) => (
-          <Pressable key={name} style={s.row} onPress={() => onOpenArtist(name)}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.rowName} numberOfLines={1}>{name}</Text>
+        discover.artists.map((a) => (
+          <Pressable key={a.name} style={s.row} onPress={() => onOpenArtist(a.name)}>
+            {a.cover && !failedCovers.has(a.cover) ? (
+              <Image source={{ uri: a.cover }} style={s.trackCover} onError={() => onCoverFail(a.cover)} />
+            ) : (
+              <View style={[s.trackCover, s.trackCoverEmpty]} />
+            )}
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={s.rowName} numberOfLines={1}>{a.name}</Text>
             </View>
             <Text style={s.rowChevron}>›</Text>
           </Pressable>

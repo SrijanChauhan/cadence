@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Animated, TextInput, Keyboard,
+  LayoutAnimation, Platform, UIManager,
 } from "react-native";
 import { Audio } from "expo-av";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -36,6 +37,21 @@ import { track as trackEvent } from "./analytics";
  */
 
 const MOOD_BUBBLES = ["Energetic", "Happy", "Content", "Calm", "Mellow", "Drained", "Down", "Tense"];
+
+// Old-architecture Android needs this flag opted into once at module scope
+// before LayoutAnimation does anything; iOS and the new architecture are
+// already on. Safe/no-op to call unconditionally.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+// Mode/Feel/More panels' mount-unmount toggles all animate through this —
+// LayoutAnimation (built into react-native core, no new dependency) animates
+// the resulting height change AND pushes sibling content below it down/up
+// in the same pass, which is what makes opening Mode read as "the panel
+// grows open from the top and everything below eases down" rather than an
+// abrupt cut. Deliberately not react-native-reanimated — see the top-of-
+// file note on why this codebase avoids that dependency.
+const animateLayout = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
 function BounceNumber({ value, style }) {
   const scale = useRef(new Animated.Value(0.4)).current;
@@ -263,6 +279,11 @@ export default function PlaylistScreen({ traits }) {
   // whatever's currently set there is just carried along on every build.
   const [modeOpen, setModeOpen] = useState(false);
   const [feelOpen, setFeelOpen] = useState(false);
+  // Mode shows 5 of the 6 activities + Road Trip up front, split into two
+  // fixed rows of 3 — the 6th slot is a "More" bubble instead of the actual
+  // 6th activity; tapping it reveals the last two (Wind-down + Road Trip)
+  // as a third row, so 7 pickable bubbles never force a lopsided 4/3 split.
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Connecting Spotify EARLY (before the first recommend call) is what makes
   // getTopArtists() actually have something to blend in. Previously Spotify
@@ -313,8 +334,21 @@ export default function PlaylistScreen({ traits }) {
   // — empty labels/text are still a valid, common case).
   const onPickActivity = (key) => {
     trackEvent("activity_picked", { activity: key });
+    animateLayout();
     setModeOpen(false);
+    setMoreOpen(false);
     load(key, { labels: selectedBubbles, text: extraFeeling });
+  };
+
+  // highlightable=false for the "More" bubble — it's a reveal trigger, not
+  // an activity pick, so it never gets the active/selected treatment.
+  const renderModeChip = (key, label, onPress, highlightable = true) => {
+    const active = highlightable && activity === key;
+    return (
+      <Pressable key={key} style={[s.chip, active && s.chipActive]} onPress={onPress}>
+        <Text style={[s.chipText, active && s.chipTextActive]} numberOfLines={1}>{label}</Text>
+      </Pressable>
+    );
   };
 
   const toggleBubble = (label) => {
@@ -326,6 +360,7 @@ export default function PlaylistScreen({ traits }) {
   // in state and rides along on the next Mode tap — nothing to rebuild yet.
   const applyFeel = () => {
     trackEvent("mood_submitted", { activity, bubble_count: selectedBubbles.length, has_text: !!extraFeeling.trim() });
+    animateLayout();
     setFeelOpen(false);
     if (!activity) return;
     if (activity === "road_trip") {
@@ -354,6 +389,7 @@ export default function PlaylistScreen({ traits }) {
     // picked in between) skips this and shows exactly where you left off.
     if (activity !== "road_trip") { setFromInput(""); setToInput(""); setRoute(null); }
     setModeOpen(false);
+    setMoreOpen(false);
     setRoadTripPageOpen(true);
   };
   const closeRoadTripPage = () => setRoadTripPageOpen(false);
@@ -861,11 +897,20 @@ export default function PlaylistScreen({ traits }) {
           one's pills are lazy: the {modeOpen && ...} / {feelOpen && ...}
           blocks below never mount until their button is opened at least
           once, and unmount again on close instead of just hiding. Opening
-          one closes the other so only one panel is ever on screen. */}
+          one closes the other so only one panel is ever on screen.
+          LayoutAnimation (not Reanimated — see engine/ comments elsewhere
+          on why this codebase avoids that dependency) makes every one of
+          these mount/unmount toggles animate as a smooth top-down grow/
+          shrink instead of an abrupt cut, and pushes whatever's below it
+          down/up in the same animated pass automatically. */}
       <View style={s.modeFeelRow}>
         <Pressable
           style={[s.modeFeelBtn, modeOpen && s.modeFeelBtnActive]}
-          onPress={() => { setModeOpen((o) => !o); setFeelOpen(false); }}
+          onPress={() => {
+            animateLayout();
+            setModeOpen((o) => { const next = !o; if (!next) setMoreOpen(false); return next; });
+            setFeelOpen(false);
+          }}
         >
           <Text style={[s.modeFeelBtnText, modeOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
             MODE{activity ? ` · ${activityLabel()}` : ""}
@@ -873,7 +918,7 @@ export default function PlaylistScreen({ traits }) {
         </Pressable>
         <Pressable
           style={[s.modeFeelBtn, feelOpen && s.modeFeelBtnActive]}
-          onPress={() => { setFeelOpen((o) => !o); setModeOpen(false); }}
+          onPress={() => { animateLayout(); setFeelOpen((o) => !o); setModeOpen(false); }}
         >
           <Text style={[s.modeFeelBtnText, feelOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
             FEEL{selectedBubbles.length ? ` · ${selectedBubbles.length}` : ""}
@@ -883,28 +928,24 @@ export default function PlaylistScreen({ traits }) {
 
       {modeOpen && (
         <View style={s.togglePanel}>
-          {/* Two explicit rows (4 + 3), not one flexWrap-everything row —
-              Road Trip is now a real chip alongside the six activities, and
-              chunking it this way keeps the panel a predictable two lines
-              regardless of how each label happens to wrap on a given
-              screen width. */}
+          {/* Three fixed rows of (up to) 3 uniform-width bubbles each, not a
+              flexWrap-everything row — 7 pickable things (6 activities +
+              Road Trip) don't split evenly into rows of 3, so the 6th slot
+              is a "More" bubble instead of the 6th activity; tapping it
+              reveals the last two (Wind-down, Road Trip) as a third row. */}
           <View style={s.chipsFirst}>
-            {ACTIVITIES.slice(0, 4).map((a) => (
-              <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
-                <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
-              </Pressable>
-            ))}
+            {ACTIVITIES.slice(0, 3).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
           </View>
-          <View style={[s.chipsFirst, { marginBottom: 0 }]}>
-            {ACTIVITIES.slice(4).map((a) => (
-              <Pressable key={a.key} style={[s.chip, activity === a.key && s.chipActive]} onPress={() => onPickActivity(a.key)}>
-                <Text style={[s.chipText, activity === a.key && s.chipTextActive]}>{a.label}</Text>
-              </Pressable>
-            ))}
-            <Pressable style={[s.chip, activity === "road_trip" && s.chipActive]} onPress={openRoadTripPage}>
-              <Text style={[s.chipText, activity === "road_trip" && s.chipTextActive]}>Road Trip</Text>
-            </Pressable>
+          <View style={[s.chipsFirst, { marginBottom: moreOpen ? 8 : 0 }]}>
+            {ACTIVITIES.slice(3, 5).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
+            {renderModeChip("mode_more", moreOpen ? "···" : "More", () => { animateLayout(); setMoreOpen((o) => !o); }, false)}
           </View>
+          {moreOpen && (
+            <View style={[s.chipsFirst, { marginBottom: 0 }]}>
+              {renderModeChip(ACTIVITIES[5].key, ACTIVITIES[5].label, () => onPickActivity(ACTIVITIES[5].key))}
+              {renderModeChip("road_trip", "Road Trip", openRoadTripPage)}
+            </View>
+          )}
         </View>
       )}
 
@@ -1240,7 +1281,12 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
   chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9 },
-  chip: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, paddingHorizontal: 13, backgroundColor: SURFACE },
+  // Percentage-of-container width (not content-hugging padding, and not
+  // flex:1 — flex would size each chip relative to its OWN row's sibling
+  // count, so the 2-wide third row would end up wider than rows of 3) so
+  // every Mode bubble is the same length regardless of label or which row
+  // it's in, and still fits any screen width proportionally.
+  chip: { width: "30%", borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, alignItems: "center", justifyContent: "center", backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 12.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },

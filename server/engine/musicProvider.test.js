@@ -6,26 +6,28 @@ import { pickTopArtists } from "./musicProvider.js";
 // it's the one part of pickTopArtists that's pure/synchronous (no iTunes
 // network calls needed once realArtists alone reaches the limit), so it's
 // the only part that can be unit-tested without hitting a live API.
+// fetchCovers: false skips the per-artist cover lookup too, so these stay
+// network-free (covers come back null).
 
 test("pickTopArtists returns real artists as-is when they already fill the limit", async () => {
   const realArtists = ["Tame Impala", "Frank Ocean", "Radiohead"];
-  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 3 });
-  assert.deepEqual(picks, realArtists);
+  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 3, fetchCovers: false });
+  assert.deepEqual(picks, realArtists.map((name) => ({ name, cover: null })));
 });
 
 test("pickTopArtists dedupes real artists case-insensitively", async () => {
   const realArtists = ["Tame Impala", "tame impala", "Frank Ocean"];
-  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 5 });
-  assert.deepEqual(picks, ["Tame Impala", "Frank Ocean"]);
+  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 5, fetchCovers: false });
+  assert.deepEqual(picks, [{ name: "Tame Impala", cover: null }, { name: "Frank Ocean", cover: null }]);
 });
 
 test("pickTopArtists caps at limit even with more real artists available", async () => {
   const realArtists = ["A", "B", "C", "D", "E"];
-  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 2 });
-  assert.deepEqual(picks, ["A", "B"]);
+  const picks = await pickTopArtists({ seedPool: [], realArtists, limit: 2, fetchCovers: false });
+  assert.deepEqual(picks, [{ name: "A", cover: null }, { name: "B", cover: null }]);
 });
 
 test("pickTopArtists with no real artists and no seed pool returns empty", async () => {
-  const picks = await pickTopArtists({ seedPool: [], realArtists: [], limit: 5 });
+  const picks = await pickTopArtists({ seedPool: [], realArtists: [], limit: 5, fetchCovers: false });
   assert.deepEqual(picks, []);
 });

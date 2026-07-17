@@ -156,24 +156,36 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
  * and "consistent to behaviour and personality" (discoverSeedTarget's seed
  * pool is already trait-filtered) even when Spotify isn't connected and
  * there's no real listening data to draw on at all.
+ *
+ * Returns { name, cover } objects, not plain names — the Profile UI shows a
+ * picture per artist the same way it does per track, and needs something to
+ * point at. Genre-driven picks already have one for free (they came from an
+ * iTunes track search); real artists (from Spotify/Last.fm, name-only) get
+ * one via a cheap extra one-track iTunes lookup per name, done in parallel
+ * since these are independent of each other and of the genre-fill pass.
+ *
+ * fetchCovers defaults on for real callers; musicProvider.test.js passes
+ * false to keep exercising the pure real-artists-fill-the-limit path
+ * without hitting a live API (covers come back null in that case).
  */
-export async function pickTopArtists({ seedPool, realArtists = [], limit = 5, onDiag = () => {} }) {
+export async function pickTopArtists({ seedPool, realArtists = [], limit = 5, onDiag = () => {}, fetchCovers = true }) {
   const seen = new Set();
-  const picks = [];
+  const names = [];
+  const covers = new Map(); // lowercased name -> cover url or null
   const realCount = Math.min(realArtists.length, limit);
 
   for (const name of realArtists) {
     const key = name.trim().toLowerCase();
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    picks.push(name.trim());
-    if (picks.length >= limit) break;
+    names.push(name.trim());
+    if (names.length >= limit) break;
   }
 
-  if (picks.length < limit && seedPool?.length) {
+  if (names.length < limit && seedPool?.length) {
     const shuffled = [...seedPool].sort(() => Math.random() - 0.5);
     for (const term of shuffled) {
-      if (picks.length >= limit) break;
+      if (names.length >= limit) break;
       try {
         const results = await itunesSearchTracks({ seedTerms: term, limit: 10 });
         // isStockMusic only checks the TRACK title — a genre-driven artist
@@ -186,8 +198,10 @@ export async function pickTopArtists({ seedPool, realArtists = [], limit = 5, on
           return key && !seen.has(key) && !isStockMusic(r) && !isGenericTitle(r.artist);
         });
         if (candidate) {
-          seen.add(candidate.artist.trim().toLowerCase());
-          picks.push(candidate.artist.trim());
+          const key = candidate.artist.trim().toLowerCase();
+          seen.add(key);
+          names.push(candidate.artist.trim());
+          covers.set(key, candidate.cover || null);
         }
       } catch (e) {
         onDiag(`artist pick for "${term}" failed: ${e.message}`);
@@ -195,8 +209,25 @@ export async function pickTopArtists({ seedPool, realArtists = [], limit = 5, on
     }
   }
 
+  const picks = names.slice(0, limit);
+
+  if (fetchCovers) {
+    await Promise.all(
+      picks.map(async (name) => {
+        const key = name.trim().toLowerCase();
+        if (covers.has(key)) return;
+        try {
+          const results = await itunesSearchTracks({ seedTerms: name, limit: 1 });
+          covers.set(key, results[0]?.cover || null);
+        } catch {
+          covers.set(key, null);
+        }
+      })
+    );
+  }
+
   onDiag(`top artists: ${realCount} real, ${picks.length - realCount} genre-driven`);
-  return picks.slice(0, limit);
+  return picks.map((name) => ({ name, cover: covers.get(name.trim().toLowerCase()) ?? null }));
 }
 
 /**
