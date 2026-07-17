@@ -51,10 +51,18 @@ export function usePreviewPlayer() {
   };
 
   const nowPlaying = list.find((t) => t.id === playingId) || null;
+  // upPrev/upNext are just the adjacent items in the already-ordered `list`
+  // relative to playingId's position — no separate play-history stack
+  // needed, since that list is the same stable order the caller passed in.
   const upNext = (() => {
     if (!nowPlaying) return null;
     const pos = list.findIndex((t) => t.id === playingId);
     return pos >= 0 ? list[pos + 1] : null;
+  })();
+  const upPrev = (() => {
+    if (!nowPlaying) return null;
+    const pos = list.findIndex((t) => t.id === playingId);
+    return pos > 0 ? list[pos - 1] : null;
   })();
 
   const stop = async () => {
@@ -62,5 +70,5 @@ export function usePreviewPlayer() {
     setPlayingId(null);
   };
 
-  return { playingId, playError, nowPlaying, upNext, play, stop };
+  return { playingId, playError, nowPlaying, upNext, upPrev, play, stop };
 }

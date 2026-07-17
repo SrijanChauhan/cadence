@@ -209,12 +209,21 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
               {player.upNext ? "Up Next · " + player.upNext.title : player.nowPlaying.artist + " · Preview"}
             </Text>
           </View>
+          {/* Plain double-triangle glyphs (same dingbat family as the play/
+              pause icon), not the ⏭ Unicode symbol — that one renders as a
+              colorful emoji on iOS/Android instead of a plain icon,
+              inconsistent with every other control in this bar. */}
+          {player.upPrev && (
+            <Pressable style={s.trackPlayBtn} onPress={() => player.play(player.upPrev)} hitSlop={8}>
+              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"◀◀"}</Text>
+            </Pressable>
+          )}
           <Pressable style={s.trackPlayBtn} onPress={() => player.play(player.nowPlaying)} hitSlop={8}>
             <Text style={[s.trackPlayIcon, { color: theme.accent, fontSize: 18 }]}>{"❚❚"}</Text>
           </Pressable>
           {player.upNext && (
             <Pressable style={s.trackPlayBtn} onPress={() => player.play(player.upNext)} hitSlop={8}>
-              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"⏭"}</Text>
+              <Text style={[s.trackPlayIcon, { fontSize: 16 }]}>{"▶▶"}</Text>
             </Pressable>
           )}
         </View>
