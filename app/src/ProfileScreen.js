@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking, Modal } from "react-native";
+import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking, Modal, TextInput } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
 import TraitGraph from "./TraitGraph";
 import { Equalizer } from "./PlaylistScreen";
 import { CoverArt } from "./SessionBanner";
-import { THEMES, useTheme } from "./theme";
+import { useTheme, THEME_PALETTE } from "./theme";
 import { useMyPicks } from "./MyPicksContext";
+import { useJigsaw, JIGSAW_BLOCKS } from "./jigsaw";
 import { usePreviewPlayer } from "./usePreviewPlayer";
 import { getTopArtists } from "./engine/spotify";
 import { BACKEND_URL } from "./config";
@@ -19,7 +20,7 @@ import { BACKEND_URL } from "./config";
 const DISCOVER_KEY = "cadence:discover";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
-  const { theme, themeId, setTheme } = useTheme();
+  const { theme, themeId, allThemes, setTheme, addCustomTheme } = useTheme();
   const { isMyPick, toggleLike } = useMyPicks();
   const player = usePreviewPlayer();
   const [history, setHistory] = useState(null); // null = loading
@@ -29,6 +30,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
   const [discover, setDiscover] = useState(null); // null = loading, else { tracks, artists }
   const [artistOpen, setArtistOpen] = useState(null); // artist name, or null
   const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const [failedCovers, setFailedCovers] = useState(() => new Set());
   const markCoverFailed = (url) => setFailedCovers((f) => new Set(f).add(url));
 
@@ -38,6 +40,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     setPersonalityOpen(false);
     setArtistOpen(null);
     setDiscoverOpen(false);
+    setCanvasOpen(false);
     getPlaylistHistory().then(setHistory);
     // Recommendations for You / Top Artists for You — trait-only, no
     // activity/mood/session context (Profile isn't "in" a session the way
@@ -93,6 +96,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     else if (artistOpen) setArtistOpen(null);
     else if (personalityOpen) setPersonalityOpen(false);
     else if (discoverOpen) setDiscoverOpen(false);
+    else if (canvasOpen) setCanvasOpen(false);
     else onClose();
   };
 
@@ -100,7 +104,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     <View style={[s.overlay, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
         <Pressable onPress={goBack} hitSlop={12} style={s.headerBackBtn}>
-          <Text style={s.headerBack}>{selected || artistOpen || personalityOpen || discoverOpen ? "← Back" : "Close"}</Text>
+          <Text style={s.headerBack}>{selected || artistOpen || personalityOpen || discoverOpen || canvasOpen ? "← Back" : "Close"}</Text>
         </Pressable>
         {/* Absolutely positioned + centered on the FULL header width, not
             balanced via a fixed-width spacer against a variable-width back
@@ -109,7 +113,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             "← Back" never are, hence the title reading as off-center. */}
         <View style={s.headerTitleWrap} pointerEvents="none">
           <Text style={s.headerTitle} numberOfLines={1}>
-            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : discoverOpen ? "RECCOS" : "PROFILE"}
+            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : discoverOpen ? "RECCOS" : canvasOpen ? "CANVAS" : "PROFILE"}
           </Text>
         </View>
       </View>
@@ -152,6 +156,8 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           failedCovers={failedCovers}
           onCoverFail={markCoverFailed}
         />
+      ) : canvasOpen ? (
+        <CanvasScreen theme={theme} allThemes={allThemes} addCustomTheme={addCustomTheme} />
       ) : (
         <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
           <Pressable onPress={() => setPersonalityOpen(true)}>
@@ -166,6 +172,9 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             </Pressable>
             <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setDiscoverOpen(true)}>
               <Text style={s.recalBtnText}>Reccos</Text>
+            </Pressable>
+            <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setCanvasOpen(true)}>
+              <Text style={s.recalBtnText}>Canvas</Text>
             </Pressable>
           </View>
 
@@ -233,7 +242,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
         <Pressable style={s.themeBackdrop} onPress={() => setThemePickerOpen(false)}>
           <Pressable style={[s.themeCard, { backgroundColor: theme.surface, borderColor: theme.accent }]} onPress={() => {}}>
             <Text style={s.themeCardTitle}>THEME</Text>
-            {Object.values(THEMES).map((t) => (
+            {Object.values(allThemes).map((t) => (
               <Pressable
                 key={t.id}
                 style={[s.themeRow, t.id === themeId && { borderColor: t.accent }]}
@@ -269,6 +278,176 @@ function PersonalityDetail({ traits, theme, onGoProfile, onGoPlaylist }) {
         </Pressable>
       </View>
     </ScrollView>
+  );
+}
+
+/**
+ * Canvas: two independent customization tools, switched by a small tab
+ * pair at the top (same recalBtn pill style as everywhere else in
+ * Profile, just re-tinted when active) —
+ *  - Themes: pick a background + text/accent colour from a curated
+ *    palette, name it, save it. Straight to the built-in theme system
+ *    (see theme.js's addCustomTheme) so a saved one shows up in the
+ *    regular Theme picker too, not a separate list.
+ *  - Jigsaw: reorder the main playlist screen's five sections with
+ *    up/down controls and save the arrangement as a named preset.
+ */
+function CanvasScreen({ theme, allThemes, addCustomTheme }) {
+  const [tab, setTab] = useState("themes");
+  return (
+    <ScrollView contentContainerStyle={s.body} showsVerticalScrollIndicator={false}>
+      <View style={s.actionRow}>
+        <Pressable
+          style={[s.recalBtn, { borderColor: theme.border }, tab === "themes" && { backgroundColor: theme.accent, borderColor: theme.accent }]}
+          onPress={() => setTab("themes")}
+        >
+          <Text style={[s.recalBtnText, tab === "themes" && { color: "#000" }]}>Themes</Text>
+        </Pressable>
+        <Pressable
+          style={[s.recalBtn, { borderColor: theme.border }, tab === "jigsaw" && { backgroundColor: theme.accent, borderColor: theme.accent }]}
+          onPress={() => setTab("jigsaw")}
+        >
+          <Text style={[s.recalBtnText, tab === "jigsaw" && { color: "#000" }]}>Jigsaw</Text>
+        </Pressable>
+      </View>
+
+      {tab === "themes" ? (
+        <ThemeCreator theme={theme} allThemes={allThemes} addCustomTheme={addCustomTheme} />
+      ) : (
+        <JigsawEditor theme={theme} />
+      )}
+    </ScrollView>
+  );
+}
+
+function ThemeCreator({ theme, allThemes, addCustomTheme }) {
+  // Custom themes are stored keyed by a "custom-<timestamp>" id — counting
+  // those (not all of allThemes, which includes the 6 built-ins) gives an
+  // honest "Theme #N" default that only increments as YOU create themes.
+  const customCount = () => Object.keys(allThemes).filter((id) => id.startsWith("custom-")).length;
+  const [bg, setBg] = useState(THEME_PALETTE[4]);
+  const [accent, setAccent] = useState(THEME_PALETTE[THEME_PALETTE.length - 1]);
+  const [name, setName] = useState(() => `Theme #${customCount() + 1}`);
+  const [savedMsg, setSavedMsg] = useState("");
+
+  const onSave = () => {
+    const created = addCustomTheme(bg, accent, name);
+    setSavedMsg(`Saved "${created.name}" and applied it.`);
+    setName(`Theme #${customCount() + 2}`);
+  };
+
+  return (
+    <View>
+      <Text style={[s.kicker, { marginTop: 24 }]}>BACKGROUND</Text>
+      <View style={s.paletteRow}>
+        {THEME_PALETTE.map((c) => (
+          <Pressable
+            key={`bg-${c}`}
+            onPress={() => setBg(c)}
+            style={[s.swatchBig, { backgroundColor: c }, bg === c && { borderColor: theme.accent }]}
+          />
+        ))}
+      </View>
+
+      <Text style={[s.kicker, { marginTop: 20 }]}>TEXT / ACCENT</Text>
+      <View style={s.paletteRow}>
+        {THEME_PALETTE.map((c) => (
+          <Pressable
+            key={`ac-${c}`}
+            onPress={() => setAccent(c)}
+            style={[s.swatchBig, { backgroundColor: c }, accent === c && { borderColor: theme.accent }]}
+          />
+        ))}
+      </View>
+
+      <View style={[s.canvasPreview, { backgroundColor: bg, borderColor: accent }]}>
+        <Text style={[s.canvasPreviewText, { color: accent }]}>CADENCE</Text>
+      </View>
+
+      {/* Naming comes last, after both colours are picked and previewed —
+          you're naming what you just made, not guessing ahead of time. */}
+      <Text style={[s.kicker, { marginTop: 20 }]}>NAME IT</Text>
+      <TextInput
+        style={s.canvasNameInput}
+        value={name}
+        onChangeText={setName}
+        placeholder="Theme name"
+        placeholderTextColor="#5A5A5A"
+        returnKeyType="done"
+      />
+
+      <Pressable style={[s.canvasSaveBtn, { backgroundColor: accent }]} onPress={onSave}>
+        <Text style={s.canvasSaveBtnText}>SAVE THEME</Text>
+      </Pressable>
+      {!!savedMsg && <Text style={s.empty}>{savedMsg}</Text>}
+    </View>
+  );
+}
+
+function JigsawEditor({ theme }) {
+  const { order, presets, activeId, selectPreset, savePreset } = useJigsaw();
+  const [localOrder, setLocalOrder] = useState(order);
+  const [name, setName] = useState(`Jigsaw #${presets.length + 1}`);
+
+  // Re-sync the editable copy whenever a different saved preset is
+  // selected below, so "reorder" always starts from what's actually active.
+  useEffect(() => { setLocalOrder(order); }, [activeId]);
+
+  const move = (index, dir) => {
+    const swapWith = index + dir;
+    if (swapWith < 0 || swapWith >= localOrder.length) return;
+    const next = [...localOrder];
+    [next[index], next[swapWith]] = [next[swapWith], next[index]];
+    setLocalOrder(next);
+  };
+
+  const labelFor = (key) => JIGSAW_BLOCKS.find((b) => b.key === key)?.label || key;
+
+  const onSave = () => {
+    savePreset(localOrder, name);
+    setName(`Jigsaw #${presets.length + 2}`);
+  };
+
+  return (
+    <View>
+      <Text style={[s.kicker, { marginTop: 24 }]}>REORDER</Text>
+      {localOrder.map((key, i) => (
+        <View key={key} style={s.jigsawRow}>
+          <Text style={s.jigsawRowLabel}>{labelFor(key)}</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable style={s.jigsawArrowBtn} disabled={i === 0} onPress={() => move(i, -1)}>
+              <Text style={[s.jigsawArrowText, i === 0 && s.jigsawArrowTextDisabled]}>▲</Text>
+            </Pressable>
+            <Pressable style={s.jigsawArrowBtn} disabled={i === localOrder.length - 1} onPress={() => move(i, 1)}>
+              <Text style={[s.jigsawArrowText, i === localOrder.length - 1 && s.jigsawArrowTextDisabled]}>▼</Text>
+            </Pressable>
+          </View>
+        </View>
+      ))}
+
+      <Text style={[s.kicker, { marginTop: 20 }]}>SAVE AS</Text>
+      <TextInput
+        style={s.canvasNameInput}
+        value={name}
+        onChangeText={setName}
+        placeholder="Preset name"
+        placeholderTextColor="#5A5A5A"
+        returnKeyType="done"
+      />
+      <Pressable style={[s.canvasSaveBtn, { backgroundColor: theme.accent }]} onPress={onSave}>
+        <Text style={s.canvasSaveBtnText}>SAVE PRESET</Text>
+      </Pressable>
+
+      <Text style={[s.kicker, { marginTop: 24 }]}>PRESETS</Text>
+      {presets.map((p) => (
+        <Pressable key={p.id} style={s.row} onPress={() => selectPreset(p.id)}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.rowName}>{p.name}</Text>
+          </View>
+          {p.id === activeId && <Text style={[s.themeRowCheck, { color: theme.accent }]}>✓</Text>}
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -484,4 +663,19 @@ const s = StyleSheet.create({
   nowCover: { width: 44, height: 44, borderRadius: 12 },
   nowTitle: { color: "#FFF", fontSize: 13.5, fontWeight: "800" },
   nowArtist: { color: "#7A7A7A", fontSize: 11, fontWeight: "600", marginTop: 1 },
+
+  // Canvas: theme creator + jigsaw layout editor
+  paletteRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  swatchBig: { width: 40, height: 40, borderRadius: 12, borderWidth: 3, borderColor: "transparent" },
+  canvasPreview: { height: 72, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginTop: 20 },
+  canvasPreviewText: { fontSize: 15, fontWeight: "900", letterSpacing: 3 },
+  canvasNameInput: { backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, borderColor: "#242424", color: "#EDEDED", fontSize: 14, padding: 14, marginTop: 10, marginBottom: 14 },
+  canvasSaveBtn: { borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 8 },
+  canvasSaveBtnText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
+
+  jigsawRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1, borderColor: "#161616" },
+  jigsawRowLabel: { color: "#EDEDED", fontSize: 14, fontWeight: "700" },
+  jigsawArrowBtn: { paddingHorizontal: 10, paddingVertical: 4 },
+  jigsawArrowText: { color: "#DADADA", fontSize: 15, fontWeight: "900" },
+  jigsawArrowTextDisabled: { opacity: 0.25 },
 });

@@ -18,6 +18,7 @@ import { connectSpotify, hasSpotifyAuth, createPlaylistFromTracks, restoreSpotif
 import { newBucketState, updateBucket, posterior, rankTracks } from "./engine/bayes";
 import { useTheme } from "./theme";
 import { useMyPicks } from "./MyPicksContext";
+import { useJigsaw } from "./jigsaw";
 import { track as trackEvent } from "./analytics";
 
 /**
@@ -36,7 +37,11 @@ import { track as trackEvent } from "./analytics";
  *  - Spotify OAuth + playlist save — needs a real browser/redirect on-device.
  */
 
-const MOOD_BUBBLES = ["Energetic", "Happy", "Content", "Calm", "Mellow", "Drained", "Down", "Tense"];
+// Order matters: first 5 are the always-visible primaries (2 rows of 3,
+// the 6th slot is the More bubble); the last 3 are revealed by More, in a
+// 3rd row lined up under the row above — Down under Calm, Tense under
+// Mellow, Drained under where More sat.
+const MOOD_BUBBLES = ["Energetic", "Happy", "Content", "Calm", "Mellow", "Down", "Tense", "Drained"];
 
 // Old-architecture Android needs this flag opted into once at module scope
 // before LayoutAnimation does anything; iOS and the new architecture are
@@ -218,6 +223,7 @@ function TrackRow({ t, s, theme, feedback, playingId, isMyPick, onPlay, onToggle
 
 export default function PlaylistScreen({ traits }) {
   const { theme } = useTheme();
+  const { order: jigsawOrder } = useJigsaw();
   const s = useMemo(() => buildStyles(theme.accent, theme.bg, theme.surface, theme.border), [theme]);
   const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -284,6 +290,10 @@ export default function PlaylistScreen({ traits }) {
   // 6th activity; tapping it reveals the last two (Wind-down + Road Trip)
   // as a third row, so 7 pickable bubbles never force a lopsided 4/3 split.
   const [moreOpen, setMoreOpen] = useState(false);
+  // Same "5 primaries + More reveals the rest" pattern for Feel's 8 mood
+  // bubbles: 5 visible (2 rows of 3, 6th slot is More), tapping it reveals
+  // the last 3 as a third row.
+  const [feelMoreOpen, setFeelMoreOpen] = useState(false);
 
   // Connecting Spotify EARLY (before the first recommend call) is what makes
   // getTopArtists() actually have something to blend in. Previously Spotify
@@ -353,6 +363,15 @@ export default function PlaylistScreen({ traits }) {
 
   const toggleBubble = (label) => {
     setSelectedBubbles((sel) => sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label]);
+  };
+
+  const renderFeelBubble = (label) => {
+    const sel = selectedBubbles.indexOf(label) !== -1;
+    return (
+      <Pressable key={label} style={[s.bubble, sel && s.bubbleActive]} onPress={() => toggleBubble(label)}>
+        <Text style={[s.bubbleText, sel && s.bubbleTextActive]} numberOfLines={1}>{label}</Text>
+      </Pressable>
+    );
   };
 
   // Closes the Feel panel and, if a Mode is already active, rebuilds with
@@ -883,6 +902,250 @@ export default function PlaylistScreen({ traits }) {
     />
   );
 
+  // Jigsaw: the main feed's five sections, keyed so Canvas's layout editor
+  // (see jigsaw.js) can reorder them. Road Trip's own page is untouched —
+  // this is exclusively the six regular-activity feed. Each block is a
+  // self-contained fragment (own guards/conditionals intact), computed
+  // fresh every render like the rest of this component's JSX, just held in
+  // an object so jigsawOrder.map() below can pick the render order.
+  const jigsawBlocks = {
+    modeFeel: (
+      <>
+        {/* Mode and Feel are the only two things on screen by default — each
+            one's pills are lazy: the {modeOpen && ...} / {feelOpen && ...}
+            blocks below never mount until their button is opened at least
+            once, and unmount again on close instead of just hiding. Opening
+            one closes the other so only one panel is ever on screen.
+            LayoutAnimation (not Reanimated — see engine/ comments elsewhere
+            on why this codebase avoids that dependency) makes every one of
+            these mount/unmount toggles animate as a smooth top-down grow/
+            shrink instead of an abrupt cut, and pushes whatever's below it
+            down/up in the same animated pass automatically. */}
+        <View style={s.modeFeelRow}>
+          <Pressable
+            style={[s.modeFeelBtn, modeOpen && s.modeFeelBtnActive]}
+            onPress={() => {
+              animateLayout();
+              setModeOpen((o) => { const next = !o; if (!next) setMoreOpen(false); return next; });
+              setFeelOpen(false);
+            }}
+          >
+            <Text style={[s.modeFeelBtnText, modeOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
+              MODE{activity ? ` · ${activityLabel().toUpperCase()}` : ""}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[s.modeFeelBtn, feelOpen && s.modeFeelBtnActive]}
+            onPress={() => {
+              animateLayout();
+              setFeelOpen((o) => { const next = !o; if (!next) setFeelMoreOpen(false); return next; });
+              setModeOpen(false);
+            }}
+          >
+            <Text style={[s.modeFeelBtnText, feelOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
+              FEEL{selectedBubbles.length ? ` · ${selectedBubbles.length}` : ""}
+            </Text>
+          </Pressable>
+        </View>
+
+        {modeOpen && (
+          <View style={s.togglePanel}>
+            {/* Three fixed rows of (up to) 3 uniform-width bubbles each, not a
+                flexWrap-everything row — 7 pickable things (6 activities +
+                Road Trip) don't split evenly into rows of 3, so the 6th slot
+                is a "More" bubble instead of the 6th activity; tapping it
+                reveals the last two (Wind-down, Road Trip) as a third row. */}
+            <View style={s.chipsFirst}>
+              {ACTIVITIES.slice(0, 3).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
+            </View>
+            <View style={[s.chipsFirst, { marginBottom: moreOpen ? 8 : 0 }]}>
+              {ACTIVITIES.slice(3, 5).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
+              {renderModeChip("mode_more", moreOpen ? "···" : "More", () => { animateLayout(); setMoreOpen((o) => !o); }, false)}
+            </View>
+            {moreOpen && (
+              <View style={[s.chipsFirst, { marginBottom: 0 }]}>
+                {renderModeChip(ACTIVITIES[5].key, ACTIVITIES[5].label, () => onPickActivity(ACTIVITIES[5].key))}
+                {renderModeChip("road_trip", "Road Trip", openRoadTripPage)}
+              </View>
+            )}
+          </View>
+        )}
+
+        {feelOpen && (
+          <View style={s.togglePanel}>
+            {/* Same 5-primaries + More pattern as Mode: two visible rows of 3
+                (6th slot is More), tapping it reveals the last 3 as a third
+                row, column-aligned under the row above (Down under Calm,
+                Tense under Mellow, Drained under where More sat). */}
+            <View style={s.bubbleWrap}>
+              {MOOD_BUBBLES.slice(0, 3).map(renderFeelBubble)}
+            </View>
+            <View style={s.bubbleWrap}>
+              {MOOD_BUBBLES.slice(3, 5).map(renderFeelBubble)}
+              <Pressable style={s.bubble} onPress={() => { animateLayout(); setFeelMoreOpen((o) => !o); }}>
+                <Text style={s.bubbleText} numberOfLines={1}>{feelMoreOpen ? "···" : "More"}</Text>
+              </Pressable>
+            </View>
+            {feelMoreOpen && (
+              <View style={s.bubbleWrap}>
+                {MOOD_BUBBLES.slice(5).map(renderFeelBubble)}
+              </View>
+            )}
+            <TextInput
+              style={s.moodInput}
+              placeholder="In my own words..."
+              placeholderTextColor="#5A5A5A"
+              value={extraFeeling}
+              onChangeText={setExtraFeeling}
+              multiline
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={Keyboard.dismiss}
+            />
+            <Pressable style={s.moodGo} onPress={applyFeel}>
+              <Text style={s.moodGoText}>{activity ? "UPDATE PLAYLIST" : "SAVE FEEL"}</Text>
+            </Pressable>
+          </View>
+        )}
+      </>
+    ),
+
+    bpm: (
+      <>
+        {/* Road Trip's banner/target/tracks/save all live on its own
+            full-screen page instead (see roadTripPageOpen below) — this main
+            feed is exclusively the six regular activities. */}
+        {target && activity !== "road_trip" && (
+          <SessionBanner
+            ref={bannerRef}
+            mood={mood}
+            weather={weather}
+            activityLabel={activityLabel()}
+            place={place}
+          />
+        )}
+
+        {target && (
+          // Off-screen, mounted (not display:none) so captureRef can grab it —
+          // a dedicated square composition for the Spotify cover upload, kept
+          // separate from the wide on-screen banner above. Never visible to
+          // the user; stays in sync with mood/weather/place as they change.
+          // Stays unconditional regardless of activity — every save path,
+          // including the Road Trip page's, reads from this same ref. Its
+          // position in the DOM doesn't matter (off-screen, pointerEvents
+          // none) so it's safe to travel with this block under Jigsaw.
+          <View style={s.coverArtOffscreen} pointerEvents="none">
+            <CoverArt
+              ref={coverArtRef}
+              mood={mood}
+              weather={weather}
+              activityLabel={activityLabel()}
+              place={place}
+            />
+          </View>
+        )}
+
+        {target && activity !== "road_trip" && (
+          <View style={s.targetRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
+              <Text style={s.targetUnit}>BPM · Tuned to You</Text>
+            </View>
+            {post && (
+              <View style={s.lambdaBox}>
+                <BounceNumber value={`${Math.round(post.lambda * 100)}`} style={s.lambdaNum} />
+                <Text style={s.lambdaLabel}>% PERSONALITY</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </>
+    ),
+
+    myPicks: (
+      <>
+        <MyPicksStrip
+          picks={myPicks}
+          onOpenApple={openApple}
+          onReorder={reorderMyPicks}
+          onRemove={removeFromMyPicks}
+        />
+
+        {myPicks.length > 0 && (
+          // Saves the whole accumulated My Picks strip as its own Spotify
+          // playlist — independent of the current activity's queue, so it
+          // stays available once the catalog spans several activities/
+          // refreshes, not just whatever's queued right now.
+          <Pressable
+            style={[s.picksSaveBtn, picksSaveState === "saving" && s.refreshBtnMaxed]}
+            onPress={saveMyPicksToSpotify}
+            disabled={picksSaveState === "saving" || picksSaveState === "connecting"}
+          >
+            <Text style={s.picksSaveBtnText}>
+              {picksSaveState === "saving" ? "SAVING…" : picksSaveState === "connecting" ? "CONNECTING…" : `SAVE MY PICKS TO SPOTIFY (${myPicks.length})`}
+            </Text>
+          </Pressable>
+        )}
+        {!!picksSaveMsg && (
+          <Text style={[s.saveMsg, picksSaveState === "error" && s.saveMsgError]}>{picksSaveMsg}</Text>
+        )}
+      </>
+    ),
+
+    songs: (
+      <>
+        {loading && activity !== "road_trip" && (
+          <View style={{ marginTop: 26, alignItems: "center" }}>
+            <ActivityIndicator color={theme.accent} />
+            <Text style={s.loadingNote}>tuning to you…</Text>
+          </View>
+        )}
+        {error && activity !== "road_trip" && (
+          <View>
+            <Text style={s.error}>{error}</Text>
+            <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>
+          </View>
+        )}
+        {diag.length > 0 && (error || loading) && activity !== "road_trip" && (
+          <View style={s.diagBox}>{diag.map((d, i) => (<Text key={i} style={s.diagLine}>{'›'} {d}</Text>))}</View>
+        )}
+
+        {activity !== "road_trip" && tracks.map(renderTrackRow)}
+      </>
+    ),
+
+    // Footnote travels with Refresh (not Song List) — it renders right
+    // after the button regardless of where this block sits in the order,
+    // which is what keeps "tap/swipe/heart" guidance directly under the
+    // refresh action in the default layout, same as before Jigsaw existed.
+    refresh: (
+      <>
+        {activity && activity !== "road_trip" && tracks.length > 0 && (
+          // Re-fetches this activity's pool from scratch, excluding everything
+          // shown so far this session. Deliberately does NOT touch myPicks —
+          // that store is fully decoupled from `tracks`/`feedback` (see
+          // like()/addToMyPicks), so a refresh has nothing to reset there.
+          // Capped at MAX_REFRESHES; resets on a genuinely new activity/mode pick.
+          <Pressable
+            style={[s.refreshBtn, refreshCount >= MAX_REFRESHES && s.refreshBtnMaxed]}
+            onPress={refreshPlaylist}
+            disabled={loading || refreshCount >= MAX_REFRESHES}
+          >
+            <Text style={s.refreshBtnText}>
+              {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : "REFRESH PLAYLIST"}
+            </Text>
+          </Pressable>
+        )}
+
+        {tracks.length > 0 && activity !== "road_trip" && (
+          <Text style={s.footnote}>
+            Tap a track to play. Swipe it away if it's not for you — a fresh one swaps in automatically. Heart to add it to your catalog, then tap the queue icon in the bar below to see it and save.
+          </Text>
+        )}
+      </>
+    ),
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: "#000" }}>
     <ScrollView style={s.root} contentContainerStyle={{ paddingBottom: nowPlaying ? 96 : 44 }}>
@@ -893,203 +1156,9 @@ export default function PlaylistScreen({ traits }) {
           </Text>
         </Pressable>
       )}
-      {/* Mode and Feel are the only two things on screen by default — each
-          one's pills are lazy: the {modeOpen && ...} / {feelOpen && ...}
-          blocks below never mount until their button is opened at least
-          once, and unmount again on close instead of just hiding. Opening
-          one closes the other so only one panel is ever on screen.
-          LayoutAnimation (not Reanimated — see engine/ comments elsewhere
-          on why this codebase avoids that dependency) makes every one of
-          these mount/unmount toggles animate as a smooth top-down grow/
-          shrink instead of an abrupt cut, and pushes whatever's below it
-          down/up in the same animated pass automatically. */}
-      <View style={s.modeFeelRow}>
-        <Pressable
-          style={[s.modeFeelBtn, modeOpen && s.modeFeelBtnActive]}
-          onPress={() => {
-            animateLayout();
-            setModeOpen((o) => { const next = !o; if (!next) setMoreOpen(false); return next; });
-            setFeelOpen(false);
-          }}
-        >
-          <Text style={[s.modeFeelBtnText, modeOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
-            MODE{activity ? ` · ${activityLabel()}` : ""}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[s.modeFeelBtn, feelOpen && s.modeFeelBtnActive]}
-          onPress={() => { animateLayout(); setFeelOpen((o) => !o); setModeOpen(false); }}
-        >
-          <Text style={[s.modeFeelBtnText, feelOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
-            FEEL{selectedBubbles.length ? ` · ${selectedBubbles.length}` : ""}
-          </Text>
-        </Pressable>
-      </View>
-
-      {modeOpen && (
-        <View style={s.togglePanel}>
-          {/* Three fixed rows of (up to) 3 uniform-width bubbles each, not a
-              flexWrap-everything row — 7 pickable things (6 activities +
-              Road Trip) don't split evenly into rows of 3, so the 6th slot
-              is a "More" bubble instead of the 6th activity; tapping it
-              reveals the last two (Wind-down, Road Trip) as a third row. */}
-          <View style={s.chipsFirst}>
-            {ACTIVITIES.slice(0, 3).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
-          </View>
-          <View style={[s.chipsFirst, { marginBottom: moreOpen ? 8 : 0 }]}>
-            {ACTIVITIES.slice(3, 5).map((a) => renderModeChip(a.key, a.label, () => onPickActivity(a.key)))}
-            {renderModeChip("mode_more", moreOpen ? "···" : "More", () => { animateLayout(); setMoreOpen((o) => !o); }, false)}
-          </View>
-          {moreOpen && (
-            <View style={[s.chipsFirst, { marginBottom: 0 }]}>
-              {renderModeChip(ACTIVITIES[5].key, ACTIVITIES[5].label, () => onPickActivity(ACTIVITIES[5].key))}
-              {renderModeChip("road_trip", "Road Trip", openRoadTripPage)}
-            </View>
-          )}
-        </View>
-      )}
-
-      {feelOpen && (
-        <View style={s.togglePanel}>
-          <View style={s.bubbleWrap}>
-            {MOOD_BUBBLES.map((label) => {
-              const sel = selectedBubbles.indexOf(label) !== -1;
-              return (
-                <Pressable key={label} style={[s.bubble, sel && s.bubbleActive]} onPress={() => toggleBubble(label)}>
-                  <Text style={[s.bubbleText, sel && s.bubbleTextActive]} numberOfLines={1}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <TextInput
-            style={s.moodInput}
-            placeholder="In my own words..."
-            placeholderTextColor="#5A5A5A"
-            value={extraFeeling}
-            onChangeText={setExtraFeeling}
-            multiline
-            returnKeyType="done"
-            blurOnSubmit
-            onSubmitEditing={Keyboard.dismiss}
-          />
-          <Pressable style={s.moodGo} onPress={applyFeel}>
-            <Text style={s.moodGoText}>{activity ? "UPDATE PLAYLIST" : "SAVE FEEL"}</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Road Trip's banner/target/tracks/save all live on its own
-          full-screen page instead (see roadTripPageOpen below) — this main
-          feed is exclusively the six regular activities. */}
-      {target && activity !== "road_trip" && (
-        <SessionBanner
-          ref={bannerRef}
-          mood={mood}
-          weather={weather}
-          activityLabel={activityLabel()}
-          place={place}
-        />
-      )}
-
-      {target && (
-        // Off-screen, mounted (not display:none) so captureRef can grab it —
-        // a dedicated square composition for the Spotify cover upload, kept
-        // separate from the wide on-screen banner above. Never visible to
-        // the user; stays in sync with mood/weather/place as they change.
-        // Stays unconditional regardless of activity — every save path,
-        // including the Road Trip page's, reads from this same ref.
-        <View style={s.coverArtOffscreen} pointerEvents="none">
-          <CoverArt
-            ref={coverArtRef}
-            mood={mood}
-            weather={weather}
-            activityLabel={activityLabel()}
-            place={place}
-          />
-        </View>
-      )}
-
-      {target && activity !== "road_trip" && (
-        <View style={s.targetRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.targetBig}>{target.bpmMin}–{target.bpmMax}</Text>
-            <Text style={s.targetUnit}>BPM · Tuned to You</Text>
-          </View>
-          {post && (
-            <View style={s.lambdaBox}>
-              <BounceNumber value={`${Math.round(post.lambda * 100)}`} style={s.lambdaNum} />
-              <Text style={s.lambdaLabel}>% PERSONALITY</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      <MyPicksStrip
-        picks={myPicks}
-        onOpenApple={openApple}
-        onReorder={reorderMyPicks}
-        onRemove={removeFromMyPicks}
-      />
-
-      {myPicks.length > 0 && (
-        // Saves the whole accumulated My Picks strip as its own Spotify
-        // playlist — independent of the current activity's queue, so it
-        // stays available once the catalog spans several activities/
-        // refreshes, not just whatever's queued right now.
-        <Pressable
-          style={[s.picksSaveBtn, picksSaveState === "saving" && s.refreshBtnMaxed]}
-          onPress={saveMyPicksToSpotify}
-          disabled={picksSaveState === "saving" || picksSaveState === "connecting"}
-        >
-          <Text style={s.picksSaveBtnText}>
-            {picksSaveState === "saving" ? "SAVING…" : picksSaveState === "connecting" ? "CONNECTING…" : `SAVE MY PICKS TO SPOTIFY (${myPicks.length})`}
-          </Text>
-        </Pressable>
-      )}
-      {!!picksSaveMsg && (
-        <Text style={[s.saveMsg, picksSaveState === "error" && s.saveMsgError]}>{picksSaveMsg}</Text>
-      )}
-
-      {loading && activity !== "road_trip" && (
-        <View style={{ marginTop: 26, alignItems: "center" }}>
-          <ActivityIndicator color={theme.accent} />
-          <Text style={s.loadingNote}>tuning to you…</Text>
-        </View>
-      )}
-      {error && activity !== "road_trip" && (
-        <View>
-          <Text style={s.error}>{error}</Text>
-          <Pressable style={s.retry} onPress={() => load(activity)}><Text style={s.retryText}>RETRY</Text></Pressable>
-        </View>
-      )}
-      {diag.length > 0 && (error || loading) && activity !== "road_trip" && (
-        <View style={s.diagBox}>{diag.map((d, i) => (<Text key={i} style={s.diagLine}>{'\u203a'} {d}</Text>))}</View>
-      )}
-
-      {activity !== "road_trip" && tracks.map(renderTrackRow)}
-
-      {activity && activity !== "road_trip" && tracks.length > 0 && (
-        // Re-fetches this activity's pool from scratch, excluding everything
-        // shown so far this session. Deliberately does NOT touch myPicks —
-        // that store is fully decoupled from `tracks`/`feedback` (see
-        // like()/addToMyPicks), so a refresh has nothing to reset there.
-        // Capped at MAX_REFRESHES; resets on a genuinely new activity/mode pick.
-        <Pressable
-          style={[s.refreshBtn, refreshCount >= MAX_REFRESHES && s.refreshBtnMaxed]}
-          onPress={refreshPlaylist}
-          disabled={loading || refreshCount >= MAX_REFRESHES}
-        >
-          <Text style={s.refreshBtnText}>
-            {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : "REFRESH PLAYLIST"}
-          </Text>
-        </Pressable>
-      )}
-
-      {tracks.length > 0 && activity !== "road_trip" && (
-        <Text style={s.footnote}>
-          Tap a track to play. Swipe it away if it's not for you — a fresh one swaps in automatically. Heart to add it to your catalog, then tap the queue icon in the bar below to see it and save.
-        </Text>
-      )}
+      {jigsawOrder.map((key) => (
+        <React.Fragment key={key}>{jigsawBlocks[key]}</React.Fragment>
+      ))}
     </ScrollView>
 
     {queueTracks.length > 0 && queueOpen && (
@@ -1391,7 +1460,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   moodSub: { color: "#8A8A8A", fontSize: 12, lineHeight: 17, marginBottom: 16 },
   // Same reasoning as chipsFirst — flex-start keeps the last (shorter) row
   // column-aligned under the rows above it, instead of centered off-column.
-  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
   // Same treatment as Mode's chip: percentage-of-container width instead of
   // content-hugging padding, so every mood bubble is the same length — and
   // at 30% width, three fit per row (flexWrap naturally wraps into rows of
@@ -1401,7 +1470,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   bubbleActive: { backgroundColor: VOLT, borderColor: VOLT },
   bubbleText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
   bubbleTextActive: { color: "#000" },
-  moodInput: { backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: BORDER, color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginBottom: 16 },
+  moodInput: { backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: BORDER, color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginTop: 6, marginBottom: 16 },
   moodGo: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
   moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 });

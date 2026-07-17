@@ -9,6 +9,7 @@ import PlaylistScreen from "./src/PlaylistScreen";
 import ProfileScreen from "./src/ProfileScreen";
 import { ThemeProvider, useTheme } from "./src/theme";
 import { MyPicksProvider } from "./src/MyPicksContext";
+import { JigsawProvider } from "./src/jigsaw";
 import { track } from "./src/analytics";
 
 const PROFILE_KEY = "cadence:profile"; // saved OCEAN vector
@@ -18,11 +19,15 @@ export default function App() {
   // ThemeProvider has to be above the component that calls useTheme() —
   // AppInner is that component, App itself stays theme-agnostic. MyPicks
   // needs to sit above both PlaylistScreen and ProfileScreen so hearting a
-  // track in either one updates the exact same shared state.
+  // track in either one updates the exact same shared state. Jigsaw sits
+  // alongside it for the same reason — PlaylistScreen reads the block
+  // order, Profile's Canvas screen edits it.
   return (
     <ThemeProvider>
       <MyPicksProvider>
-        <AppInner />
+        <JigsawProvider>
+          <AppInner />
+        </JigsawProvider>
       </MyPicksProvider>
     </ThemeProvider>
   );
