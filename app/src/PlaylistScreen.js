@@ -956,7 +956,7 @@ export default function PlaylistScreen({ traits }) {
               const sel = selectedBubbles.indexOf(label) !== -1;
               return (
                 <Pressable key={label} style={[s.bubble, sel && s.bubbleActive]} onPress={() => toggleBubble(label)}>
-                  <Text style={[s.bubbleText, sel && s.bubbleTextActive]}>{label}</Text>
+                  <Text style={[s.bubbleText, sel && s.bubbleTextActive]} numberOfLines={1}>{label}</Text>
                 </Pressable>
               );
             })}
@@ -1280,7 +1280,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   coverArtOffscreen: { position: "absolute", left: -2000, top: -2000 },
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
-  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9 },
+  chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 9, justifyContent: "center" },
   // Percentage-of-container width (not content-hugging padding, and not
   // flex:1 — flex would size each chip relative to its OWN row's sibling
   // count, so the 2-wide third row would end up wider than rows of 3) so
@@ -1385,8 +1385,13 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
 
   moodQ: { color: "#FFF", fontSize: 21, fontWeight: "800", lineHeight: 27, marginBottom: 6 },
   moodSub: { color: "#8A8A8A", fontSize: 12, lineHeight: 17, marginBottom: 16 },
-  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
-  bubble: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, paddingHorizontal: 16, backgroundColor: SURFACE },
+  bubbleWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14, justifyContent: "center" },
+  // Same treatment as Mode's chip: percentage-of-container width instead of
+  // content-hugging padding, so every mood bubble is the same length — and
+  // at 30% width, three fit per row (flexWrap naturally wraps into rows of
+  // 3 on its own, no need to chunk MOOD_BUBBLES into explicit rows the way
+  // Mode does, since Feel doesn't need a "More" reveal).
+  bubble: { width: "30%", borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 9, alignItems: "center", justifyContent: "center", backgroundColor: SURFACE },
   bubbleActive: { backgroundColor: VOLT, borderColor: VOLT },
   bubbleText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
   bubbleTextActive: { color: "#000" },
