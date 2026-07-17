@@ -28,6 +28,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [discover, setDiscover] = useState(null); // null = loading, else { tracks, artists }
   const [artistOpen, setArtistOpen] = useState(null); // artist name, or null
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [failedCovers, setFailedCovers] = useState(() => new Set());
   const markCoverFailed = (url) => setFailedCovers((f) => new Set(f).add(url));
 
@@ -36,6 +37,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     setSelected(null);
     setPersonalityOpen(false);
     setArtistOpen(null);
+    setDiscoverOpen(false);
     getPlaylistHistory().then(setHistory);
     // Recommendations for You / Top Artists for You — trait-only, no
     // activity/mood/session context (Profile isn't "in" a session the way
@@ -90,6 +92,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     if (selected) setSelected(null);
     else if (artistOpen) setArtistOpen(null);
     else if (personalityOpen) setPersonalityOpen(false);
+    else if (discoverOpen) setDiscoverOpen(false);
     else onClose();
   };
 
@@ -97,7 +100,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     <View style={[s.overlay, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
         <Pressable onPress={goBack} hitSlop={12} style={s.headerBackBtn}>
-          <Text style={s.headerBack}>{selected || artistOpen || personalityOpen ? "← Back" : "Close"}</Text>
+          <Text style={s.headerBack}>{selected || artistOpen || personalityOpen || discoverOpen ? "← Back" : "Close"}</Text>
         </Pressable>
         {/* Absolutely positioned + centered on the FULL header width, not
             balanced via a fixed-width spacer against a variable-width back
@@ -106,7 +109,7 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             "← Back" never are, hence the title reading as off-center. */}
         <View style={s.headerTitleWrap} pointerEvents="none">
           <Text style={s.headerTitle} numberOfLines={1}>
-            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : "PROFILE"}
+            {selected ? "PLAYLIST" : artistOpen ? artistOpen.toUpperCase() : personalityOpen ? "PERSONALITY" : discoverOpen ? "RECOMMENDATIONS" : "PROFILE"}
           </Text>
         </View>
       </View>
@@ -138,6 +141,17 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           onGoProfile={() => setPersonalityOpen(false)}
           onGoPlaylist={onClose}
         />
+      ) : discoverOpen ? (
+        <DiscoverSection
+          discover={discover}
+          theme={theme}
+          player={player}
+          isMyPick={isMyPick}
+          onToggleLike={toggleLike}
+          onOpenArtist={setArtistOpen}
+          failedCovers={failedCovers}
+          onCoverFail={markCoverFailed}
+        />
       ) : (
         <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
           <Pressable onPress={() => setPersonalityOpen(true)}>
@@ -150,18 +164,10 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
             <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setThemePickerOpen(true)}>
               <Text style={s.recalBtnText}>Theme</Text>
             </Pressable>
+            <Pressable style={[s.recalBtn, { borderColor: theme.border }]} onPress={() => setDiscoverOpen(true)}>
+              <Text style={s.recalBtnText}>Recommendations</Text>
+            </Pressable>
           </View>
-
-          <DiscoverSection
-            discover={discover}
-            theme={theme}
-            player={player}
-            isMyPick={isMyPick}
-            onToggleLike={toggleLike}
-            onOpenArtist={setArtistOpen}
-            failedCovers={failedCovers}
-            onCoverFail={markCoverFailed}
-          />
 
           <Text style={[s.kicker, { marginTop: 32 }]}>YOUR PLAYLISTS</Text>
           {history === null ? (
@@ -296,10 +302,8 @@ function TrackListItem({ t, theme, playing, isPicked, onPlay, onToggleLike, fail
  * right below the personality placard, not another destination to visit. */
 function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOpenArtist, failedCovers, onCoverFail }) {
   return (
-    <View style={[s.bubbleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-      <Text style={[s.bubbleTitle, { color: theme.accent }]}>RECOMMENDATIONS</Text>
-
-      <Text style={s.bubbleSubKicker}>FOR YOU</Text>
+    <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
+      <Text style={s.kicker}>FOR YOU</Text>
       {discover === null ? (
         <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
       ) : discover.tracks.length === 0 ? (
@@ -320,7 +324,7 @@ function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOp
         ))
       )}
 
-      <Text style={[s.bubbleSubKicker, { marginTop: 20 }]}>TOP ARTISTS</Text>
+      <Text style={[s.kicker, { marginTop: 28 }]}>TOP ARTISTS</Text>
       {discover === null ? (
         <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
       ) : discover.artists.length === 0 ? (
@@ -335,7 +339,7 @@ function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOp
           </Pressable>
         ))
       )}
-    </View>
+    </ScrollView>
   );
 }
 
@@ -429,10 +433,7 @@ const s = StyleSheet.create({
 
   body: { paddingHorizontal: 22, paddingBottom: 60 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
-  bubbleCard: { borderRadius: 20, borderWidth: 1, padding: 16, marginTop: 28 },
-  bubbleTitle: { fontSize: 12, letterSpacing: 3, fontWeight: "900", marginBottom: 14 },
-  bubbleSubKicker: { color: "#6E6E6E", fontSize: 11, letterSpacing: 2, fontWeight: "800", marginBottom: 8 },
-  actionRow: { flexDirection: "row", gap: 10 },
+  actionRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
   recalBtn: { alignSelf: "flex-start", borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 10, paddingHorizontal: 20 },
   recalBtnText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
 
