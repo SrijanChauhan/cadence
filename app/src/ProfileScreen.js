@@ -296,8 +296,10 @@ function TrackListItem({ t, theme, playing, isPicked, onPlay, onToggleLike, fail
  * right below the personality placard, not another destination to visit. */
 function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOpenArtist, failedCovers, onCoverFail }) {
   return (
-    <>
-      <Text style={[s.kicker, { marginTop: 32 }]}>RECOMMENDATIONS FOR YOU</Text>
+    <View style={[s.bubbleCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <Text style={[s.bubbleTitle, { color: theme.accent }]}>RECOMMENDATIONS</Text>
+
+      <Text style={s.bubbleSubKicker}>FOR YOU</Text>
       {discover === null ? (
         <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
       ) : discover.tracks.length === 0 ? (
@@ -318,7 +320,7 @@ function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOp
         ))
       )}
 
-      <Text style={[s.kicker, { marginTop: 28 }]}>TOP ARTISTS FOR YOU</Text>
+      <Text style={[s.bubbleSubKicker, { marginTop: 20 }]}>TOP ARTISTS</Text>
       {discover === null ? (
         <ActivityIndicator color={theme.accent} style={{ marginTop: 8 }} />
       ) : discover.artists.length === 0 ? (
@@ -333,7 +335,7 @@ function DiscoverSection({ discover, theme, player, isMyPick, onToggleLike, onOp
           </Pressable>
         ))
       )}
-    </>
+    </View>
   );
 }
 
@@ -427,6 +429,9 @@ const s = StyleSheet.create({
 
   body: { paddingHorizontal: 22, paddingBottom: 60 },
   kicker: { color: "#6E6E6E", fontSize: 12, letterSpacing: 4, fontWeight: "800", marginBottom: 10 },
+  bubbleCard: { borderRadius: 20, borderWidth: 1, padding: 16, marginTop: 28 },
+  bubbleTitle: { fontSize: 12, letterSpacing: 3, fontWeight: "900", marginBottom: 14 },
+  bubbleSubKicker: { color: "#6E6E6E", fontSize: 11, letterSpacing: 2, fontWeight: "800", marginBottom: 8 },
   actionRow: { flexDirection: "row", gap: 10 },
   recalBtn: { alignSelf: "flex-start", borderRadius: 999, borderWidth: 1.5, borderColor: "#2E2E2E", paddingVertical: 10, paddingHorizontal: 20 },
   recalBtnText: { color: "#DADADA", fontSize: 13, fontWeight: "700" },
