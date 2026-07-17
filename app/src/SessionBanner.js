@@ -132,6 +132,39 @@ export function BlobLayer({ valence, arousal, condition, localHour, seedKey }) {
 }
 
 /**
+ * Small standalone square rendering of the same mood/weather art used above
+ * and as the actual uploaded Spotify cover image — used wherever a saved
+ * playlist needs "its cover" shown without the date/time footer strip
+ * (Profile's playlist list thumbnail, and the top of a playlist's detail
+ * view). Since it's driven by the same seedKey inputs stored on the history
+ * record, it reproduces the exact same composition that was captured and
+ * uploaded at save time, no separate image storage needed. Below ~90px the
+ * mood label text is dropped since it stops being legible; at large sizes
+ * (detail view) it stays on, matching SessionBanner's own art tile.
+ */
+export function CoverArt({ mood, weather, activityLabel, size = 200 }) {
+  const seedKey = `${mood?.label || "Neutral"}|${weather?.condition || ""}|${activityLabel || ""}`;
+  const baseColor = moodColor(mood?.valence ?? 0, mood?.arousal ?? 0);
+  const showLabel = size >= 90;
+  return (
+    <View style={{ width: size, height: size, borderRadius: size * 0.2, overflow: "hidden", backgroundColor: baseColor, justifyContent: "flex-end", padding: size * 0.08 }}>
+      <BlobLayer
+        valence={mood?.valence ?? 0}
+        arousal={mood?.arousal ?? 0}
+        condition={weather?.condition}
+        localHour={weather?.localHour}
+        seedKey={seedKey}
+      />
+      {showLabel && (
+        <Text style={{ color: "#FFFFFF", fontSize: Math.max(10, size * 0.065), fontFamily: HELVETICA_BOLD, fontWeight: "900", letterSpacing: 2, textShadowColor: "rgba(0,0,0,0.4)", textShadowRadius: 6 }}>
+          {(mood?.label || "Neutral").toUpperCase()}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/**
  * Forwards a ref to the outer container so PlaylistScreen can capture it
  * with react-native-view-shot's captureRef and upload it as the Spotify
  * playlist's cover image — the cover then visually matches this banner.

@@ -4,6 +4,7 @@ import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
 import TraitGraph from "./TraitGraph";
 import { Equalizer } from "./PlaylistScreen";
+import { CoverArt } from "./SessionBanner";
 import { THEMES, useTheme } from "./theme";
 import { useMyPicks } from "./MyPicksContext";
 import { usePreviewPlayer } from "./usePreviewPlayer";
@@ -143,7 +144,8 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           ) : (
             history.map((h) => (
               <Pressable key={h.id} style={s.row} onPress={() => setSelected(h)}>
-                <View style={{ flex: 1 }}>
+                <CoverArt mood={h.mood} weather={h.weather} activityLabel={h.activityLabel} size={44} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text style={s.rowName} numberOfLines={1}>{h.name}</Text>
                   <Text style={s.rowMeta} numberOfLines={1}>
                     {new Date(h.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -351,6 +353,9 @@ function PlaylistDetail({ record, theme, player, isMyPick, onToggleLike, failedC
 
   return (
     <ScrollView contentContainerStyle={[s.body, { paddingBottom: player.nowPlaying ? 96 : 60 }]} showsVerticalScrollIndicator={false}>
+      <View style={{ alignItems: "center", marginBottom: 18 }}>
+        <CoverArt mood={record.mood} weather={record.weather} activityLabel={record.activityLabel} size={200} />
+      </View>
       <Text style={s.detailName}>{record.name}</Text>
       <Text style={s.detailStory}>{record.story}</Text>
       {record.spotifyUrl && (

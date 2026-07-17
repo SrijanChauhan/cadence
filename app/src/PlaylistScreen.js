@@ -986,12 +986,6 @@ export default function PlaylistScreen({ traits }) {
 
       {activity !== "road_trip" && tracks.map(renderTrackRow)}
 
-      {tracks.length > 0 && activity !== "road_trip" && (
-        <Text style={s.footnote}>
-          Tap a track to play. Swipe it away if it's not for you — a fresh one swaps in automatically. Heart to add it to your catalog, then tap the queue icon in the bar below to see it and save.
-        </Text>
-      )}
-
       {activity && activity !== "road_trip" && tracks.length > 0 && (
         // Re-fetches this activity's pool from scratch, excluding everything
         // shown so far this session. Deliberately does NOT touch myPicks —
@@ -1007,6 +1001,12 @@ export default function PlaylistScreen({ traits }) {
             {loading ? "REFRESHING…" : refreshCount >= MAX_REFRESHES ? "REFRESH LIMIT REACHED" : "REFRESH PLAYLIST"}
           </Text>
         </Pressable>
+      )}
+
+      {tracks.length > 0 && activity !== "road_trip" && (
+        <Text style={s.footnote}>
+          Tap a track to play. Swipe it away if it's not for you — a fresh one swaps in automatically. Heart to add it to your catalog, then tap the queue icon in the bar below to see it and save.
+        </Text>
       )}
     </ScrollView>
 
