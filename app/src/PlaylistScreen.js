@@ -963,7 +963,7 @@ export default function PlaylistScreen({ traits }) {
           </View>
           <TextInput
             style={s.moodInput}
-            placeholder="add more, in your own words (optional)..."
+            placeholder="Add more, in your own words (optional)..."
             placeholderTextColor="#5A5A5A"
             value={extraFeeling}
             onChangeText={setExtraFeeling}
