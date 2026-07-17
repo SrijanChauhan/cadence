@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, ScrollView, StyleSheet, Image, ActivityIndicator, Linking, Modal } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getPlaylistHistory } from "./playlistHistory";
 import PersonalityPlacard from "./PersonalityPlacard";
 import TraitGraph from "./TraitGraph";
@@ -10,6 +11,12 @@ import { useMyPicks } from "./MyPicksContext";
 import { usePreviewPlayer } from "./usePreviewPlayer";
 import { getTopArtists } from "./engine/spotify";
 import { BACKEND_URL } from "./config";
+
+// Persisted the same way the theme pick and the OCEAN profile itself are —
+// scoped by a fingerprint of the traits vector so it survives closing/
+// reopening Profile (no re-roll every time), but a genuinely new profile
+// (Test Again) invalidates it and triggers a fresh /discover call.
+const DISCOVER_KEY = "cadence:discover";
 
 export default function ProfileScreen({ visible, traits, onClose, onRecalibrate }) {
   const { theme, themeId, setTheme } = useTheme();
@@ -34,7 +41,23 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
     // activity/mood/session context (Profile isn't "in" a session the way
     // the main screen is). Real Spotify top artists (if connected) blend in
     // server-side alongside the personality-driven picks — see POST /discover.
+    // Cached under DISCOVER_KEY, keyed by a fingerprint of `traits`, so
+    // reopening Profile shows the same list instead of re-rolling it every
+    // time — only a genuinely new personality profile (Test Again) misses
+    // the cache and triggers a fresh call.
+    const traitsKey = JSON.stringify(traits);
     (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(DISCOVER_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached.traitsKey === traitsKey) {
+            setDiscover({ tracks: cached.tracks, artists: cached.artists });
+            return;
+          }
+        }
+      } catch {}
+
       setDiscover(null);
       try {
         const { names: spotifyArtists } = await getTopArtists();
@@ -44,7 +67,11 @@ export default function ProfileScreen({ visible, traits, onClose, onRecalibrate 
           body: JSON.stringify({ traits, spotifyArtists }),
         });
         const json = await res.json();
-        setDiscover(res.ok ? json : { tracks: [], artists: [] });
+        const result = res.ok ? json : { tracks: [], artists: [] };
+        setDiscover(result);
+        if (res.ok) {
+          AsyncStorage.setItem(DISCOVER_KEY, JSON.stringify({ traitsKey, tracks: result.tracks, artists: result.artists })).catch(() => {});
+        }
       } catch {
         setDiscover({ tracks: [], artists: [] });
       }
