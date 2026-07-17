@@ -305,7 +305,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   prompt: { color: "#FFF", fontSize: 24, fontWeight: "800", lineHeight: 31, marginBottom: 32, minHeight: 62 },
 
   likertWrap: { gap: 12 },
-  opt: { borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 14, paddingHorizontal: 22, backgroundColor: SURFACE },
+  opt: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 14, paddingHorizontal: 22, backgroundColor: SURFACE },
   optActive: { backgroundColor: VOLT, borderColor: VOLT },
   optLabel: { color: "#DADADA", fontSize: 15, fontWeight: "700" },
   optLabelActive: { color: "#000" },

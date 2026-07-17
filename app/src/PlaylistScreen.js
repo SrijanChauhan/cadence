@@ -1233,7 +1233,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   spotifyBanner: { backgroundColor: SURFACE, borderWidth: 1.5, borderColor: "#1DB954", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 16 },
   spotifyBannerText: { color: "#1DB954", fontSize: 12.5, fontWeight: "700", lineHeight: 17 },
   chipsFirst: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 4 },
-  chip: { borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
+  chip: { borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 10, paddingHorizontal: 18, backgroundColor: SURFACE },
   chipActive: { backgroundColor: VOLT, borderColor: VOLT },
   chipText: { color: "#DADADA", fontSize: 13.5, fontWeight: "800" },
   chipTextActive: { color: "#000" },
@@ -1242,7 +1242,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   // a lazily-mounted card (togglePanel) below it — same rounded-card
   // language as the rest of the app, not a chip row sitting bare on the bg.
   modeFeelRow: { flexDirection: "row", gap: 10, marginTop: 10, marginBottom: 4 },
-  modeFeelBtn: { flex: 1, borderRadius: 999, borderWidth: 2, borderColor: BORDER, paddingVertical: 14, alignItems: "center", backgroundColor: SURFACE },
+  modeFeelBtn: { flex: 1, borderRadius: 999, borderWidth: 1.5, borderColor: BORDER, paddingVertical: 14, alignItems: "center", backgroundColor: SURFACE },
   modeFeelBtnActive: { backgroundColor: VOLT, borderColor: VOLT },
   modeFeelBtnText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
   modeFeelBtnTextActive: { color: "#000" },
