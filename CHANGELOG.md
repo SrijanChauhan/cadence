@@ -126,13 +126,19 @@ points. Grouped by area below; commit hashes reference `main`.
   already work. Saved themes persist to AsyncStorage and show up in the
   regular Theme picker alongside the built-ins, not a separate list.
 - **Jigsaw tab**: the main playlist screen's five sections (Mode & Feel,
-  BPM & Personality, My Picks & Save, Song List, Refresh Playlist) can be
-  reordered with up/down controls and saved as a named preset (defaults
-  to "Jigsaw #N"). New `jigsaw.js` provider holds the active order + saved
-  presets; `PlaylistScreen` now renders its main feed by mapping over the
-  active preset's order instead of a fixed sequence. The tap/swipe/heart
-  footnote travels with the Refresh block (not Song List) specifically so
-  it still lands directly under the refresh button in the default order,
+  BPM & Personality, My Picks & Save, Song List, Refresh Playlist) render
+  as real drag-and-drop puzzle pieces — bordered cards with a visible gap
+  between them, a raised shadow, a corner grip, and a small sketch of each
+  section's actual content — hold-and-drag one to reorder, then save the
+  arrangement as a named preset (defaults to "Jigsaw #N"). Built in a new
+  `JigsawEditor.js`, reusing `MyPicksStrip.js`'s existing hold-and-drag
+  gesture pattern (`react-native-gesture-handler` Pan + `activateAfterLongPress`,
+  no Reanimated) transposed to a vertical stack. New `jigsaw.js` provider
+  holds the active order + saved presets; `PlaylistScreen` now renders its
+  main feed by mapping over the active preset's order instead of a fixed
+  sequence. The tap/swipe/heart footnote travels with the Refresh block
+  (not Song List) specifically so it still lands directly under the
+  refresh button in the default order,
   matching pre-Jigsaw behavior.
 - **Mode/Feel polish**: the MODE button's activity label is now uppercase
   when selected (was mixed-case, e.g. "MODE · Deep Work" → "MODE · DEEP
