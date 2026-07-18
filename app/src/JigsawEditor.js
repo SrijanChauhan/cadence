@@ -98,8 +98,13 @@ function JigsawPiece({ block, index, total, onReorder, theme }) {
           dragging && s.pieceDragging,
         ]}
       >
+        {/* Three actual dot elements, not a "⋮" font glyph — renders
+            crisp and consistent size across devices instead of relying
+            on however a given font draws that character. */}
         <View style={s.pieceGrip}>
-          <Text style={s.pieceGripDots}>⋮</Text>
+          <View style={s.gripDot} />
+          <View style={s.gripDot} />
+          <View style={s.gripDot} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[s.pieceLabel, { color: theme.accent }]}>{block.label}</Text>
@@ -184,8 +189,8 @@ const s = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4,
   },
   pieceDragging: { shadowOpacity: 0.5, shadowRadius: 10, elevation: 8 },
-  pieceGrip: { width: 28, alignItems: "center", justifyContent: "center" },
-  pieceGripDots: { color: "#6E6E6E", fontSize: 22, fontWeight: "900", letterSpacing: -1 },
+  pieceGrip: { width: 28, alignItems: "center", justifyContent: "center", gap: 4 },
+  gripDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#6E6E6E" },
   pieceLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
 
   previewRow: { flexDirection: "row", alignItems: "center", gap: 8 },
