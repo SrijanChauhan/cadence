@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, Text, StyleSheet, Animated, TextInput, Pressable } from "react-native";
+import { View, Text, StyleSheet, Animated, TextInput, Pressable, ScrollView } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useJigsaw, JIGSAW_BLOCKS } from "./jigsaw";
 
@@ -18,21 +18,28 @@ import { useJigsaw, JIGSAW_BLOCKS } from "./jigsaw";
  * the new index — same "snap on release" model, not a live neighbor-
  * shifting animation.
  */
-const PIECE_HEIGHT = 184;
+const PIECE_HEIGHT = 236;
 const PIECE_GAP = 16;
 const PIECE_STRIDE = PIECE_HEIGHT + PIECE_GAP;
 
+// Real My Picks tile dimensions (MyPicksStrip.js) — matched exactly, not
+// approximated, since the cover row is the tallest/widest piece of content
+// any block preview needs to fit.
+const PICK_TILE = 84;
+const PICK_GAP = 10;
+
 /**
- * The actual homepage widgets at (close to) real scale — same button
- * sizes, same copy ("MODE", "REFRESH PLAYLIST", ...), same proportions
- * PlaylistScreen itself renders — not a shrunk-down icon standing in for
- * the section. Card height is fixed to fit the tallest of these (My
- * Picks/Song List); shorter content (Mode & Feel, Refresh) just sits
- * vertically centered in the extra room, same as the piece card itself.
+ * The actual homepage widgets at 100% real scale — every size/weight/
+ * colour/letter-spacing below is copied directly from PlaylistScreen.js's
+ * own modeFeelBtn/targetRow/refreshBtn styles and MyPicksStrip.js's own
+ * tile styles, not approximated. Card height fits the tallest of these
+ * (My Picks, with its 84px cover art); shorter content (Mode & Feel,
+ * Refresh) sits vertically centered in the extra room.
  */
 function PiecePreview({ blockKey, theme }) {
   switch (blockKey) {
     case "modeFeel":
+      // matches PlaylistScreen.js modeFeelBtn/modeFeelBtnText exactly
       return (
         <View style={s.fullRow}>
           <View style={[s.fullPill, { backgroundColor: theme.surface }]}>
@@ -44,46 +51,52 @@ function PiecePreview({ blockKey, theme }) {
         </View>
       );
     case "bpm":
+      // matches PlaylistScreen.js targetRow/targetBig/targetUnit/lambdaBox/
+      // lambdaNum/lambdaLabel exactly, including that the BPM number is
+      // plain white (not accent) while the personality number is accent
       return (
-        <View style={s.fullRow}>
+        <View style={s.targetRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[s.fullBpm, { color: theme.accent }]}>120–140</Text>
-            <Text style={s.fullCaption}>BPM · TUNED TO YOU</Text>
+            <Text style={s.targetBig}>120–140</Text>
+            <Text style={s.targetUnit}>BPM · Tuned to You</Text>
           </View>
           <View style={{ alignItems: "center" }}>
-            <Text style={[s.fullBpm, { color: theme.accent }]}>78</Text>
-            <Text style={s.fullCaption}>% PERSONALITY</Text>
+            <Text style={[s.lambdaNum, { color: theme.accent }]}>78</Text>
+            <Text style={s.lambdaLabel}>% PERSONALITY</Text>
           </View>
         </View>
       );
     case "myPicks":
       return (
         <View>
-          <Text style={[s.fullKicker, { color: theme.accent }]}>MY PICKS · 4</Text>
-          <View style={[s.fullRow, { marginTop: 8, marginBottom: 12 }]}>
-            {[0, 1, 2].map((i) => <View key={i} style={[s.fullCover, { backgroundColor: theme.border }]} />)}
-          </View>
-          <View style={[s.fullBar, { backgroundColor: theme.accent }]}>
-            <Text style={s.fullBarText} numberOfLines={1}>SAVE MY PICKS TO SPOTIFY</Text>
+          <Text style={[s.picksTitle, { color: theme.accent }]}>MY PICKS · 4</Text>
+          <Text style={s.picksHint}>Tap to Open · Hold to Remove · Hold + Drag to Reorder</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+            {[0, 1, 2, 3].map((i) => <View key={i} style={[s.pickCover, { backgroundColor: theme.border }]} />)}
+          </ScrollView>
+          <View style={[s.fullBar, { backgroundColor: theme.accent, marginTop: 10 }]}>
+            <Text style={s.fullBarText} numberOfLines={1}>SAVE MY PICKS TO SPOTIFY (4)</Text>
           </View>
         </View>
       );
     case "songs":
+      // matches PlaylistScreen.js row/cover/title/artist/icon exactly
       return (
         <View>
           {[0, 1].map((i) => (
-            <View key={i} style={s.fullTrackRow}>
-              <View style={[s.fullTrackCover, { backgroundColor: theme.border }]} />
+            <View key={i} style={s.trackRow}>
+              <View style={[s.trackCover, { backgroundColor: theme.border }]} />
               <View style={{ flex: 1 }}>
-                <Text style={s.fullTrackTitle} numberOfLines={1}>Track Title</Text>
-                <Text style={s.fullTrackArtist} numberOfLines={1}>Artist Name</Text>
+                <Text style={s.trackTitle} numberOfLines={1}>Track Title</Text>
+                <Text style={s.trackArtist} numberOfLines={1}>Artist Name  ·  128 BPM</Text>
               </View>
-              <Text style={[s.fullTrackIcon, { color: theme.accent }]}>♥</Text>
+              <Text style={s.trackHeart}>♥</Text>
             </View>
           ))}
         </View>
       );
     case "refresh":
+      // matches PlaylistScreen.js refreshBtn/refreshBtnText exactly
       return (
         <View style={[s.fullOutlineBar, { borderColor: theme.border }]}>
           <Text style={s.fullOutlineBarText}>REFRESH PLAYLIST</Text>
@@ -227,27 +240,40 @@ const s = StyleSheet.create({
 
   // Real homepage proportions — same shapes/sizes as PlaylistScreen's own
   // modeFeelBtn/targetRow/picksSaveBtn/trackRow/refreshBtn styles.
+  // --- everything below is copied 1:1 from PlaylistScreen.js's own
+  // buildStyles() and MyPicksStrip.js's stylesheet, not approximated ---
   fullRow: { flexDirection: "row", alignItems: "center", gap: 12 },
 
-  fullPill: { flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: "center" },
-  fullPillText: { color: "#DADADA", fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+  // modeFeelBtn / modeFeelBtnText
+  fullPill: { flex: 1, borderRadius: 999, paddingVertical: 14, alignItems: "center" },
+  fullPillText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
 
-  fullBpm: { fontSize: 30, fontWeight: "900", letterSpacing: -1 },
-  fullCaption: { color: "#6E6E6E", fontSize: 9.5, fontWeight: "800", letterSpacing: 1, marginTop: 2 },
+  // targetRow / targetBig / targetUnit / lambdaNum / lambdaLabel
+  targetRow: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
+  targetBig: { color: "#FFF", fontSize: 44, fontWeight: "900", letterSpacing: -2, lineHeight: 48 },
+  targetUnit: { color: "#8A8A8A", fontSize: 12.5, fontWeight: "700", marginBottom: 6 },
+  lambdaNum: { fontSize: 56, fontWeight: "900", letterSpacing: -2, lineHeight: 58 },
+  lambdaLabel: { color: "#6E6E6E", fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
 
-  fullKicker: { fontSize: 11, letterSpacing: 2, fontWeight: "800" },
-  fullCover: { width: 58, height: 58, borderRadius: 14 },
-  fullBar: { borderRadius: 999, paddingVertical: 12, alignItems: "center" },
-  fullBarText: { color: "#000", fontSize: 11.5, fontWeight: "900", letterSpacing: 1 },
+  // MyPicksStrip.js title / hint / pickCover
+  picksTitle: { fontSize: 10.5, letterSpacing: 2, fontWeight: "900", marginBottom: 4 },
+  picksHint: { color: "#5A5A5A", fontSize: 10 },
+  pickCover: { width: PICK_TILE, height: PICK_TILE, borderRadius: 14, marginRight: PICK_GAP },
 
-  fullTrackRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  fullTrackCover: { width: 48, height: 48, borderRadius: 12 },
-  fullTrackTitle: { color: "#EDEDED", fontSize: 14, fontWeight: "700" },
-  fullTrackArtist: { color: "#7A7A7A", fontSize: 12, marginTop: 2 },
-  fullTrackIcon: { fontSize: 16 },
+  // picksSaveBtn / picksSaveBtnText
+  fullBar: { borderRadius: 999, paddingVertical: 13, alignItems: "center" },
+  fullBarText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
+  // row / cover / title / artist / icon
+  trackRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderColor: "#141414" },
+  trackCover: { width: 46, height: 46, borderRadius: 12 },
+  trackTitle: { color: "#FFF", fontSize: 14.5, fontWeight: "800" },
+  trackArtist: { color: "#7A7A7A", fontSize: 12, marginTop: 2, fontWeight: "600" },
+  trackHeart: { color: "#7A7A7A", fontSize: 16, fontWeight: "800" },
+
+  // refreshBtn / refreshBtnText
   fullOutlineBar: { borderRadius: 999, borderWidth: 1.5, paddingVertical: 13, alignItems: "center" },
-  fullOutlineBarText: { color: "#DADADA", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  fullOutlineBarText: { color: "#DADADA", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
 
   nameInput: { backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, color: "#EDEDED", fontSize: 14, padding: 14, marginBottom: 14 },
   saveBtn: { borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 8 },
