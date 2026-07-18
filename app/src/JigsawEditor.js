@@ -18,51 +18,53 @@ import { useJigsaw, JIGSAW_BLOCKS } from "./jigsaw";
  * the new index — same "snap on release" model, not a live neighbor-
  * shifting animation.
  */
-const PIECE_HEIGHT = 96;
-const PIECE_GAP = 14;
+const PIECE_HEIGHT = 184;
+const PIECE_GAP = 16;
 const PIECE_STRIDE = PIECE_HEIGHT + PIECE_GAP;
 
 /**
- * Not an abstract sketch — the actual homepage widgets, scaled down but
- * built from the same button/pill/row shapes and real copy ("MODE",
- * "REFRESH PLAYLIST", ...) that PlaylistScreen itself renders, so a piece
- * looks like a miniature of the real section rather than a stand-in icon.
+ * The actual homepage widgets at (close to) real scale — same button
+ * sizes, same copy ("MODE", "REFRESH PLAYLIST", ...), same proportions
+ * PlaylistScreen itself renders — not a shrunk-down icon standing in for
+ * the section. Card height is fixed to fit the tallest of these (My
+ * Picks/Song List); shorter content (Mode & Feel, Refresh) just sits
+ * vertically centered in the extra room, same as the piece card itself.
  */
 function PiecePreview({ blockKey, theme }) {
   switch (blockKey) {
     case "modeFeel":
       return (
-        <View style={s.previewRow}>
-          <View style={[s.miniPill, { backgroundColor: theme.surface }]}>
-            <Text style={[s.miniPillText, { color: "#DADADA" }]}>MODE</Text>
+        <View style={s.fullRow}>
+          <View style={[s.fullPill, { backgroundColor: theme.surface }]}>
+            <Text style={s.fullPillText}>MODE</Text>
           </View>
-          <View style={[s.miniPill, { backgroundColor: theme.surface }]}>
-            <Text style={[s.miniPillText, { color: "#DADADA" }]}>FEEL</Text>
+          <View style={[s.fullPill, { backgroundColor: theme.surface }]}>
+            <Text style={s.fullPillText}>FEEL</Text>
           </View>
         </View>
       );
     case "bpm":
       return (
-        <View style={s.previewRow}>
-          <View>
-            <Text style={[s.miniBpm, { color: theme.accent }]}>120–140</Text>
-            <Text style={s.miniCaption}>BPM · TUNED TO YOU</Text>
+        <View style={s.fullRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.fullBpm, { color: theme.accent }]}>120–140</Text>
+            <Text style={s.fullCaption}>BPM · TUNED TO YOU</Text>
           </View>
           <View style={{ alignItems: "center" }}>
-            <Text style={[s.miniBpm, { color: theme.accent }]}>78</Text>
-            <Text style={s.miniCaption}>% PERSONALITY</Text>
+            <Text style={[s.fullBpm, { color: theme.accent }]}>78</Text>
+            <Text style={s.fullCaption}>% PERSONALITY</Text>
           </View>
         </View>
       );
     case "myPicks":
       return (
         <View>
-          <Text style={[s.miniCaption, { color: theme.accent, marginBottom: 4 }]}>MY PICKS · 4</Text>
-          <View style={[s.previewRow, { marginBottom: 6 }]}>
-            {[0, 1, 2, 3].map((i) => <View key={i} style={[s.miniCover, { backgroundColor: theme.border }]} />)}
+          <Text style={[s.fullKicker, { color: theme.accent }]}>MY PICKS · 4</Text>
+          <View style={[s.fullRow, { marginTop: 8, marginBottom: 12 }]}>
+            {[0, 1, 2].map((i) => <View key={i} style={[s.fullCover, { backgroundColor: theme.border }]} />)}
           </View>
-          <View style={[s.miniBar, { backgroundColor: theme.accent }]}>
-            <Text style={s.miniBarText} numberOfLines={1}>SAVE MY PICKS TO SPOTIFY</Text>
+          <View style={[s.fullBar, { backgroundColor: theme.accent }]}>
+            <Text style={s.fullBarText} numberOfLines={1}>SAVE MY PICKS TO SPOTIFY</Text>
           </View>
         </View>
       );
@@ -70,20 +72,21 @@ function PiecePreview({ blockKey, theme }) {
       return (
         <View>
           {[0, 1].map((i) => (
-            <View key={i} style={s.miniTrackRow}>
-              <View style={[s.miniCoverSmall, { backgroundColor: theme.border }]} />
-              <View>
-                <View style={[s.previewLine, { width: 74, backgroundColor: "#DADADA" }]} />
-                <View style={[s.previewLine, { width: 48, backgroundColor: theme.border, marginTop: 3 }]} />
+            <View key={i} style={s.fullTrackRow}>
+              <View style={[s.fullTrackCover, { backgroundColor: theme.border }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.fullTrackTitle} numberOfLines={1}>Track Title</Text>
+                <Text style={s.fullTrackArtist} numberOfLines={1}>Artist Name</Text>
               </View>
+              <Text style={[s.fullTrackIcon, { color: theme.accent }]}>♥</Text>
             </View>
           ))}
         </View>
       );
     case "refresh":
       return (
-        <View style={[s.miniOutlineBar, { borderColor: theme.border }]}>
-          <Text style={s.miniOutlineBarText}>REFRESH PLAYLIST</Text>
+        <View style={[s.fullOutlineBar, { borderColor: theme.border }]}>
+          <Text style={s.fullOutlineBarText}>REFRESH PLAYLIST</Text>
         </View>
       );
     default:
@@ -222,20 +225,29 @@ const s = StyleSheet.create({
   gripDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: "#6E6E6E" },
   pieceLabel: { fontSize: 12, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
 
-  previewRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  previewLine: { height: 6, borderRadius: 3 },
+  // Real homepage proportions — same shapes/sizes as PlaylistScreen's own
+  // modeFeelBtn/targetRow/picksSaveBtn/trackRow/refreshBtn styles.
+  fullRow: { flexDirection: "row", alignItems: "center", gap: 12 },
 
-  miniPill: { paddingVertical: 6, paddingHorizontal: 14, borderRadius: 999 },
-  miniPillText: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
-  miniBpm: { fontSize: 15, fontWeight: "900", letterSpacing: -0.5 },
-  miniCaption: { color: "#6E6E6E", fontSize: 7.5, fontWeight: "800", letterSpacing: 0.5 },
-  miniCover: { width: 14, height: 14, borderRadius: 4 },
-  miniCoverSmall: { width: 22, height: 22, borderRadius: 6, marginRight: 8 },
-  miniTrackRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  miniBar: { borderRadius: 999, paddingVertical: 6, alignItems: "center" },
-  miniBarText: { color: "#000", fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
-  miniOutlineBar: { borderRadius: 999, borderWidth: 1.5, paddingVertical: 7, alignItems: "center", width: "80%" },
-  miniOutlineBarText: { color: "#DADADA", fontSize: 8.5, fontWeight: "900", letterSpacing: 0.5 },
+  fullPill: { flex: 1, borderRadius: 999, paddingVertical: 13, alignItems: "center" },
+  fullPillText: { color: "#DADADA", fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+
+  fullBpm: { fontSize: 30, fontWeight: "900", letterSpacing: -1 },
+  fullCaption: { color: "#6E6E6E", fontSize: 9.5, fontWeight: "800", letterSpacing: 1, marginTop: 2 },
+
+  fullKicker: { fontSize: 11, letterSpacing: 2, fontWeight: "800" },
+  fullCover: { width: 58, height: 58, borderRadius: 14 },
+  fullBar: { borderRadius: 999, paddingVertical: 12, alignItems: "center" },
+  fullBarText: { color: "#000", fontSize: 11.5, fontWeight: "900", letterSpacing: 1 },
+
+  fullTrackRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  fullTrackCover: { width: 48, height: 48, borderRadius: 12 },
+  fullTrackTitle: { color: "#EDEDED", fontSize: 14, fontWeight: "700" },
+  fullTrackArtist: { color: "#7A7A7A", fontSize: 12, marginTop: 2 },
+  fullTrackIcon: { fontSize: 16 },
+
+  fullOutlineBar: { borderRadius: 999, borderWidth: 1.5, paddingVertical: 13, alignItems: "center" },
+  fullOutlineBarText: { color: "#DADADA", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
 
   nameInput: { backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, color: "#EDEDED", fontSize: 14, padding: 14, marginBottom: 14 },
   saveBtn: { borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 8 },
