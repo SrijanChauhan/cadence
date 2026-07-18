@@ -8,7 +8,7 @@ import { Equalizer } from "./PlaylistScreen";
 import { CoverArt } from "./SessionBanner";
 import { useTheme, THEME_PALETTE } from "./theme";
 import { useMyPicks } from "./MyPicksContext";
-import { useJigsaw, JIGSAW_BLOCKS } from "./jigsaw";
+import { JigsawEditor } from "./JigsawEditor";
 import { usePreviewPlayer } from "./usePreviewPlayer";
 import { getTopArtists } from "./engine/spotify";
 import { BACKEND_URL } from "./config";
@@ -384,73 +384,6 @@ function ThemeCreator({ theme, allThemes, addCustomTheme }) {
   );
 }
 
-function JigsawEditor({ theme }) {
-  const { order, presets, activeId, selectPreset, savePreset } = useJigsaw();
-  const [localOrder, setLocalOrder] = useState(order);
-  const [name, setName] = useState(`Jigsaw #${presets.length + 1}`);
-
-  // Re-sync the editable copy whenever a different saved preset is
-  // selected below, so "reorder" always starts from what's actually active.
-  useEffect(() => { setLocalOrder(order); }, [activeId]);
-
-  const move = (index, dir) => {
-    const swapWith = index + dir;
-    if (swapWith < 0 || swapWith >= localOrder.length) return;
-    const next = [...localOrder];
-    [next[index], next[swapWith]] = [next[swapWith], next[index]];
-    setLocalOrder(next);
-  };
-
-  const labelFor = (key) => JIGSAW_BLOCKS.find((b) => b.key === key)?.label || key;
-
-  const onSave = () => {
-    savePreset(localOrder, name);
-    setName(`Jigsaw #${presets.length + 2}`);
-  };
-
-  return (
-    <View>
-      <Text style={[s.kicker, { marginTop: 24 }]}>REORDER</Text>
-      {localOrder.map((key, i) => (
-        <View key={key} style={s.jigsawRow}>
-          <Text style={s.jigsawRowLabel}>{labelFor(key)}</Text>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable style={s.jigsawArrowBtn} disabled={i === 0} onPress={() => move(i, -1)}>
-              <Text style={[s.jigsawArrowText, i === 0 && s.jigsawArrowTextDisabled]}>▲</Text>
-            </Pressable>
-            <Pressable style={s.jigsawArrowBtn} disabled={i === localOrder.length - 1} onPress={() => move(i, 1)}>
-              <Text style={[s.jigsawArrowText, i === localOrder.length - 1 && s.jigsawArrowTextDisabled]}>▼</Text>
-            </Pressable>
-          </View>
-        </View>
-      ))}
-
-      <Text style={[s.kicker, { marginTop: 20 }]}>SAVE AS</Text>
-      <TextInput
-        style={s.canvasNameInput}
-        value={name}
-        onChangeText={setName}
-        placeholder="Preset name"
-        placeholderTextColor="#5A5A5A"
-        returnKeyType="done"
-      />
-      <Pressable style={[s.canvasSaveBtn, { backgroundColor: theme.accent }]} onPress={onSave}>
-        <Text style={s.canvasSaveBtnText}>SAVE PRESET</Text>
-      </Pressable>
-
-      <Text style={[s.kicker, { marginTop: 24 }]}>PRESETS</Text>
-      {presets.map((p) => (
-        <Pressable key={p.id} style={s.row} onPress={() => selectPreset(p.id)}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.rowName}>{p.name}</Text>
-          </View>
-          {p.id === activeId && <Text style={[s.themeRowCheck, { color: theme.accent }]}>✓</Text>}
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 /** Shared by the saved-playlist detail, Recommendations, and an artist's
  * top-10 — same cover+equalizer-overlay, play, and heart-to-My-Picks
  * treatment everywhere a track shows up in Profile. */
@@ -672,10 +605,4 @@ const s = StyleSheet.create({
   canvasNameInput: { backgroundColor: "#141414", borderRadius: 14, borderWidth: 1, borderColor: "#242424", color: "#EDEDED", fontSize: 14, padding: 14, marginTop: 10, marginBottom: 14 },
   canvasSaveBtn: { borderRadius: 999, paddingVertical: 13, alignItems: "center", marginBottom: 8 },
   canvasSaveBtnText: { color: "#000", fontWeight: "900", letterSpacing: 1.5, fontSize: 12 },
-
-  jigsawRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1, borderColor: "#161616" },
-  jigsawRowLabel: { color: "#EDEDED", fontSize: 14, fontWeight: "700" },
-  jigsawArrowBtn: { paddingHorizontal: 10, paddingVertical: 4 },
-  jigsawArrowText: { color: "#DADADA", fontSize: 15, fontWeight: "900" },
-  jigsawArrowTextDisabled: { opacity: 0.25 },
 });
