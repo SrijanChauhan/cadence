@@ -102,14 +102,18 @@ export async function searchAcrossGenres({ seedPool, bpmMin, bpmMax, limit = 20,
   // Capped at 200, the documented max for iTunes's `limit` parameter.
   const perTerm = Math.min(200, Math.max(6, Math.ceil((limit * 1.5 + excludeSet.size) / terms.length)));
 
-  const [first, ...rest] = terms;
-  const results = [await searchTracks({ seedTerms: first, bpmMin, bpmMax, limit: perTerm, onDiag })];
-  if (rest.length) {
-    const more = await Promise.all(
-      rest.map((seedTerms) => searchTracks({ seedTerms, bpmMin, bpmMax, limit: perTerm, onDiag }).catch(() => []))
-    );
-    results.push(...more);
-  }
+  // Every term is caught individually (including what used to be a special-
+  // cased, uncaught "first" term) — iTunes rate-limits per IP, and even
+  // with fetchWithRetry's backoff a term can still fail. One failed term
+  // should just contribute zero tracks, not take down the whole refresh.
+  const results = await Promise.all(
+    terms.map((seedTerms) =>
+      searchTracks({ seedTerms, bpmMin, bpmMax, limit: perTerm, onDiag }).catch((e) => {
+        onDiag(`"${seedTerms}" search failed, skipping: ${e.message}`);
+        return [];
+      })
+    )
+  );
   onDiag(`explored ${terms.length} genre${terms.length === 1 ? "" : "s"}: ${terms.join(", ")}`);
 
   let merged = results.flat();

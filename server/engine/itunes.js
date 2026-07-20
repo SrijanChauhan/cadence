@@ -10,10 +10,32 @@
 
 const BASE = "https://itunes.apple.com/search";
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * iTunes's public Search API rate-limits per IP — not officially documented,
+ * but verified live: a handful of "Refresh Playlist" taps in quick
+ * succession, each firing one parallel request per seed term (see
+ * searchAcrossGenres), is enough to trip a 403. Retrying a 403/429 after a
+ * short, growing delay clears most of these without the caller ever seeing
+ * a failure; a request that still fails after retries is left for the
+ * caller to catch and degrade gracefully rather than throwing here.
+ */
+async function fetchWithRetry(url, { retries = 2, baseDelayMs = 400 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res;
+    if ((res.status === 403 || res.status === 429) && attempt < retries) {
+      await sleep(baseDelayMs * (attempt + 1));
+      continue;
+    }
+    throw new Error(`iTunes HTTP ${res.status}`);
+  }
+}
+
 export async function itunesSearchTracks({ seedTerms, limit = 25, country = "IN", onDiag = () => {} }) {
   const url = `${BASE}?term=${encodeURIComponent(seedTerms)}&media=music&entity=song&limit=${limit}&country=${country}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`iTunes HTTP ${res.status}`);
+  const res = await fetchWithRetry(url);
   const json = await res.json();
   const tracks = (json.results || []).map(normalize).filter((t) => t.id);
   onDiag(`itunes "${seedTerms}" (${country}) → ${tracks.length} tracks`);
