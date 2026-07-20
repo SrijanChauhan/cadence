@@ -246,7 +246,7 @@ const s = StyleSheet.create({
 
   // modeFeelBtn / modeFeelBtnText
   fullPill: { flex: 1, borderRadius: 999, paddingVertical: 14, alignItems: "center" },
-  fullPillText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
+  fullPillText: { color: "#DADADA", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
 
   // targetRow / targetBig / targetUnit / lambdaNum / lambdaLabel
   targetRow: { flexDirection: "row", gap: 14, alignItems: "flex-start" },

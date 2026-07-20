@@ -1370,7 +1370,7 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   modeFeelRow: { flexDirection: "row", gap: 10, marginTop: 10, marginBottom: 4 },
   modeFeelBtn: { flex: 1, borderRadius: 999, paddingVertical: 14, alignItems: "center", backgroundColor: SURFACE },
   modeFeelBtnActive: { backgroundColor: VOLT },
-  modeFeelBtnText: { color: "#DADADA", fontSize: 13.5, fontWeight: "900", letterSpacing: 1 },
+  modeFeelBtnText: { color: "#DADADA", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   modeFeelBtnTextActive: { color: "#000" },
   togglePanel: { backgroundColor: SURFACE, borderRadius: 20, borderWidth: 1, borderColor: BORDER, padding: 18, marginTop: 4, marginBottom: 18 },
 
