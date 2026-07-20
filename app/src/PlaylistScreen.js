@@ -943,7 +943,7 @@ export default function PlaylistScreen({ traits }) {
             }}
           >
             <Text style={[s.modeFeelBtnText, feelOpen && s.modeFeelBtnTextActive]} numberOfLines={1}>
-              FEEL{selectedBubbles.length ? ` · ${selectedBubbles.length}` : ""}
+              FEEL{selectedBubbles.length ? ` · ${selectedBubbles.join(", ").toUpperCase()}` : ""}
             </Text>
           </Pressable>
         </View>
