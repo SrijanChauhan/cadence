@@ -365,6 +365,24 @@ export default function PlaylistScreen({ traits }) {
     setSelectedBubbles((sel) => sel.includes(label) ? sel.filter((x) => x !== label) : [...sel, label]);
   };
 
+  // Feel is deliberately sticky — it carries over across Mode picks instead
+  // of resetting each time — but that means it needs an explicit way to go
+  // back to nothing, or a mood picked once just silently keeps applying to
+  // every activity after it with no visible way to undo that.
+  const clearFeel = () => {
+    trackEvent("mood_cleared", { activity });
+    animateLayout();
+    setSelectedBubbles([]);
+    setExtraFeeling("");
+    setFeelOpen(false);
+    if (!activity) return;
+    if (activity === "road_trip") {
+      loadRoadTrip(lastRoadTrip.current.from, lastRoadTrip.current.to, { labels: [], text: "" });
+    } else {
+      load(activity, { labels: [], text: "" });
+    }
+  };
+
   const renderFeelBubble = (label) => {
     const sel = selectedBubbles.indexOf(label) !== -1;
     return (
@@ -1005,6 +1023,15 @@ export default function PlaylistScreen({ traits }) {
             <Pressable style={s.moodGo} onPress={applyFeel}>
               <Text style={s.moodGoText}>{activity ? "UPDATE PLAYLIST" : "SAVE FEEL"}</Text>
             </Pressable>
+            {(selectedBubbles.length > 0 || extraFeeling.trim().length > 0) && (
+              // Feel is sticky by design (carries over across Mode picks),
+              // so this is the only way to get back to nothing once
+              // something's selected — without it, a mood picked once
+              // would keep silently applying to every activity after it.
+              <Pressable onPress={clearFeel} hitSlop={12}>
+                <Text style={s.feelClearText}>Clear</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </>
@@ -1473,5 +1500,6 @@ const buildStyles = (VOLT, BG, SURFACE, BORDER) => StyleSheet.create({
   moodInput: { backgroundColor: BG, borderRadius: 14, borderWidth: 1, borderColor: BORDER, color: "#EDEDED", fontSize: 14, padding: 14, minHeight: 70, textAlignVertical: "top", marginTop: 6, marginBottom: 16 },
   moodGo: { backgroundColor: VOLT, borderRadius: 999, paddingVertical: 14, alignItems: "center", marginBottom: 12 },
   moodGoText: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+  feelClearText: { color: "#7A7A7A", fontSize: 12.5, fontWeight: "700", textAlign: "center" },
 });
 
